@@ -1,0 +1,2845 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uplink — Claude Code History</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" rel="stylesheet">
+
+    <style>
+        /* ------------------------------------------------------------------ */
+        /* Layout                                                               */
+        /* ------------------------------------------------------------------ */
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            font-size: 0.9rem;
+        }
+        .app-navbar {
+            flex-shrink: 0;
+            border-bottom: 1px solid var(--bs-border-color);
+        }
+        .app-body {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        .app-status {
+            flex-shrink: 0;
+            border-top: 1px solid var(--bs-border-color);
+            background: var(--bs-tertiary-bg);
+            font-size: 0.75rem;
+            padding: 0.3rem 1rem;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            color: var(--bs-secondary-color);
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Sidebar                                                              */
+        /* ------------------------------------------------------------------ */
+        .sidebar {
+            width: 280px;
+            min-width: 160px;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bs-body-bg);
+            flex-shrink: 0;
+        }
+
+        /* Left ↔ right drag handle */
+        .resize-handle {
+            width: 5px;
+            cursor: col-resize;
+            background: transparent;
+            flex-shrink: 0;
+            transition: background 0.15s;
+            position: relative;
+            z-index: 10;
+        }
+        .resize-handle:hover,
+        .resize-handle.dragging {
+            background: var(--bs-primary);
+        }
+
+        /* Sessions section — explicit pixel height, scrollable */
+        #sessions-section {
+            overflow-y: auto;
+            flex-shrink: 0;
+            min-height: 80px;
+        }
+
+        /* Prompts section — takes all remaining space */
+        #prompts-section {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+        }
+        #prompts-section #prompts-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        /* Section headers — sticky so they stay visible when scrolling */
+        .sidebar-section-header {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            padding: 0.5rem 1rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        #sessions-section .sidebar-section-header {
+            color: #90caf9;
+            background: #0d2137;
+            border-bottom: 1px solid #1e3a52;
+        }
+
+        /* Prompts sticky block — header + Show All pinned to top */
+        #prompts-sticky {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+        }
+        #prompts-header {
+            color: #a5d6a7;
+            background: #0a1f0e;
+            border-bottom: 1px solid #1a3d20;
+        }
+        #prompts-show-all {
+            background: #061409;
+            border-bottom: 2px solid #1a3d20;
+        }
+        #prompts-show-all .sidebar-item {
+            padding: 0.4rem 1rem;
+            font-size: 0.82rem;
+        }
+
+        /* Up ↕ down drag handle between the two sidebar sections */
+        .h-resize-handle {
+            height: 10px;
+            cursor: row-resize;
+            flex-shrink: 0;
+            background: #1a1a2e;
+            border-top: 2px solid #0d6efd;
+            border-bottom: 2px solid #0d6efd;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+        }
+        .h-resize-handle::before {
+            content: '• • • • •';
+            font-size: 6px;
+            letter-spacing: 3px;
+            color: #0d6efd;
+            line-height: 1;
+        }
+        .h-resize-handle:hover,
+        .h-resize-handle.dragging {
+            background: #0d2a5e;
+        }
+        .sidebar-item {
+            padding: 0.55rem 1rem;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: background 0.1s, border-color 0.1s;
+            line-height: 1.3;
+        }
+        .sidebar-item:hover {
+            background: var(--bs-tertiary-bg);
+        }
+        .sidebar-item.active {
+            border-left-color: var(--bs-primary);
+            background: rgba(13, 110, 253, 0.08);
+        }
+        .item-title {
+            font-size: 0.85rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 500;
+        }
+        .item-sub {
+            font-size: 0.75rem;
+            color: var(--bs-secondary-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 0.1rem;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Token / cost stats                                                   */
+        /* ------------------------------------------------------------------ */
+        .exchange-stats {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-top: 0.6rem;
+            padding: 0.3rem 0.5rem;
+            background: var(--bs-tertiary-bg);
+            border-radius: 0.3rem;
+            font-size: 0.74rem;
+            color: var(--bs-secondary-color);
+        }
+        .exchange-stats span { display: flex; align-items: center; gap: 0.15rem; }
+        .stat-cost { color: #7ec987; font-weight: 600; }
+        .prompt-stats {
+            font-size: 0.71rem;
+            color: var(--bs-secondary-color);
+            margin-top: 0.15rem;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Search                                                               */
+        /* ------------------------------------------------------------------ */
+        #search-section {
+            flex-shrink: 0;
+            border-bottom: 1px solid var(--bs-border-color);
+        }
+        #search-section.active {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-bottom: none;
+        }
+        #search-bar {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0.75rem;
+            background: var(--bs-tertiary-bg);
+            border-bottom: 1px solid var(--bs-border-color);
+            flex-shrink: 0;
+        }
+        #search-input {
+            flex: 1;
+            min-width: 0;
+            background: var(--bs-body-bg);
+            border: 1px solid var(--bs-border-color);
+            border-radius: 0.3rem;
+            color: var(--bs-body-color);
+            padding: 0.3rem 0.5rem;
+            font-size: 0.85rem;
+            outline: none;
+        }
+        #search-input:focus {
+            border-color: var(--bs-primary);
+            box-shadow: 0 0 0 2px rgba(13,110,253,0.2);
+        }
+        #search-clear {
+            background: none;
+            border: none;
+            color: var(--bs-secondary-color);
+            padding: 0;
+            cursor: pointer;
+            display: none;
+            font-size: 0.8rem;
+            flex-shrink: 0;
+        }
+        #search-clear:hover { color: var(--bs-body-color); }
+        #search-section.active #search-clear { display: block; }
+        #search-results {
+            display: none;
+            overflow-y: auto;
+            flex: 1;
+        }
+        #search-section.active #search-results { display: block; }
+        .search-result {
+            padding: 0.55rem 1rem;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            border-bottom: 1px solid var(--bs-border-color);
+            transition: background 0.1s;
+        }
+        .search-result:hover { background: var(--bs-tertiary-bg); }
+        .search-result.active {
+            border-left-color: var(--bs-primary);
+            background: rgba(13,110,253,0.08);
+        }
+        .search-result-meta {
+            font-size: 0.71rem;
+            color: var(--bs-secondary-color);
+            margin-bottom: 0.2rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .search-result-snippet {
+            font-size: 0.81rem;
+            line-height: 1.4;
+            color: var(--bs-body-color);
+        }
+        mark.hl {
+            background: rgba(255, 210, 0, 0.28);
+            color: inherit;
+            border-radius: 2px;
+            padding: 0 1px;
+        }
+        .search-empty {
+            padding: 2rem 1rem;
+            text-align: center;
+            color: var(--bs-secondary-color);
+            font-size: 0.85rem;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Folder tree                                                          */
+        /* ------------------------------------------------------------------ */
+        .tree-folder-header {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.45rem 0.75rem;
+            cursor: pointer;
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--bs-body-color);
+            border-bottom: 1px solid var(--bs-border-color);
+            word-break: break-all;
+            line-height: 1.3;
+        }
+        .tree-folder-header:hover {
+            background: var(--bs-tertiary-bg);
+        }
+        .tree-folder-header .chevron {
+            flex-shrink: 0;
+            transition: transform 0.15s;
+            color: var(--bs-secondary-color);
+        }
+        .tree-folder-header .folder-icon {
+            flex-shrink: 0;
+            color: #e3a811;
+        }
+        .tree-folder-header.open .chevron {
+            transform: rotate(90deg);
+        }
+        .tree-children {
+            display: none;
+        }
+        .tree-children.open {
+            display: block;
+        }
+        .tree-session {
+            padding: 0.45rem 0.75rem 0.45rem 2rem;
+            cursor: pointer;
+            border-left: 3px solid transparent;
+            transition: background 0.1s, border-color 0.1s;
+        }
+        .tree-session:hover {
+            background: var(--bs-tertiary-bg);
+        }
+        .tree-session.active {
+            border-left-color: var(--bs-primary);
+            background: rgba(13, 110, 253, 0.08);
+        }
+        .tree-session .session-time {
+            font-size: 0.82rem;
+            font-weight: 500;
+        }
+        .tree-session .session-preview {
+            font-size: 0.74rem;
+            color: var(--bs-secondary-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 0.1rem;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Prompt number badge                                                  */
+        /* ------------------------------------------------------------------ */
+        .prompt-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 1.5rem;
+            height: 1.5rem;
+            background: var(--bs-secondary-bg);
+            color: var(--bs-secondary-color);
+            border-radius: 0.2rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            flex-shrink: 0;
+            margin-right: 0.4rem;
+        }
+        .sidebar-item.active .prompt-num {
+            background: var(--bs-primary);
+            color: white;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Conversation pane                                                    */
+        /* ------------------------------------------------------------------ */
+        .conversation-pane {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem 2rem;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Filter banner                                                        */
+        /* ------------------------------------------------------------------ */
+        .filter-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            border-radius: 0.375rem;
+            padding: 0.5rem 1rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.85rem;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Context window bar (sidebar prompts)                                */
+        /* ------------------------------------------------------------------ */
+        .ctx-bar-track {
+            height: 3px;
+            background: rgba(255,255,255,0.07);
+            border-radius: 2px;
+            margin-top: 0.3rem;
+            overflow: hidden;
+        }
+        .ctx-bar-fill {
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Messages                                                             */
+        /* ------------------------------------------------------------------ */
+        .exchange {
+            margin-bottom: 2rem;
+            border-left: 3px solid transparent;
+            padding-left: 0.65rem;
+        }
+        .exchange + .exchange {
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--bs-border-color);
+        }
+        .msg-header {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-bottom: 0.6rem;
+        }
+        .msg-header.user   { color: #58a6ff; }
+        .msg-header.claude { color: #3fb950; }
+        .msg-header .ts {
+            margin-left: auto;
+            font-weight: 400;
+            font-size: 0.7rem;
+            text-transform: none;
+            letter-spacing: 0;
+            color: var(--bs-secondary-color);
+        }
+        .msg-body-user {
+            background: var(--bs-tertiary-bg);
+            border: 1px solid var(--bs-border-color);
+            border-radius: 0.375rem;
+            padding: 0.85rem 1rem;
+            white-space: pre-wrap;
+            font-family: var(--bs-font-monospace);
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+        .msg-body-claude {
+            line-height: 1.7;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Markdown styles within Claude messages                               */
+        /* ------------------------------------------------------------------ */
+        .msg-body-claude p { margin-bottom: 0.7rem; }
+        .msg-body-claude p:last-child { margin-bottom: 0; }
+        .msg-body-claude h1, .msg-body-claude h2, .msg-body-claude h3,
+        .msg-body-claude h4, .msg-body-claude h5 {
+            margin-top: 1.25rem;
+            margin-bottom: 0.4rem;
+            font-weight: 600;
+        }
+        .msg-body-claude h1 { font-size: 1.35rem; border-bottom: 1px solid var(--bs-border-color); padding-bottom: 0.3rem; }
+        .msg-body-claude h2 { font-size: 1.15rem; }
+        .msg-body-claude h3 { font-size: 1rem; }
+        .msg-body-claude code:not(pre code) {
+            background: rgba(110, 118, 129, 0.2);
+            padding: 0.1em 0.35em;
+            border-radius: 0.25rem;
+            font-size: 0.875em;
+        }
+        .msg-body-claude pre {
+            background: #0d1117;
+            border: 1px solid var(--bs-border-color);
+            border-radius: 0.5rem;
+            padding: 1rem;
+            overflow-x: auto;
+            margin: 0.8rem 0;
+        }
+        .msg-body-claude pre code { font-size: 0.84rem; }
+        .msg-body-claude ul, .msg-body-claude ol { padding-left: 1.5rem; margin-bottom: 0.7rem; }
+        .msg-body-claude li { margin-bottom: 0.2rem; }
+        .msg-body-claude blockquote {
+            border-left: 3px solid var(--bs-border-color);
+            padding-left: 1rem;
+            color: var(--bs-secondary-color);
+            margin: 0.75rem 0;
+        }
+        .msg-body-claude table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 0.8rem 0;
+            font-size: 0.875rem;
+        }
+        .msg-body-claude th, .msg-body-claude td {
+            border: 1px solid var(--bs-border-color);
+            padding: 0.4rem 0.75rem;
+        }
+        .msg-body-claude th { background: var(--bs-tertiary-bg); font-weight: 600; }
+        .msg-body-claude a { color: var(--bs-link-color); }
+        .msg-body-claude hr { border-color: var(--bs-border-color); margin: 1rem 0; }
+
+        /* ------------------------------------------------------------------ */
+        /* Tool use blocks                                                      */
+        /* ------------------------------------------------------------------ */
+        .tool-block {
+            border: 1px solid var(--bs-border-color);
+            border-radius: 0.375rem;
+            overflow: hidden;
+            margin: 0.6rem 0;
+            font-size: 0.84rem;
+        }
+        .tool-header {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.35rem 0.75rem;
+            background: var(--bs-tertiary-bg);
+            color: var(--bs-secondary-color);
+            cursor: pointer;
+            font-family: var(--bs-font-monospace);
+            user-select: none;
+        }
+        .tool-header:hover { background: var(--bs-secondary-bg); }
+        .tool-body {
+            display: none;
+            padding: 0.75rem;
+            background: #0d1117;
+        }
+        .tool-body.open { display: block; }
+        .tool-body pre { margin: 0; background: transparent; padding: 0; color: #e6edf3; font-size: 0.82rem; }
+
+        /* ------------------------------------------------------------------ */
+        /* Empty / loading states                                               */
+        /* ------------------------------------------------------------------ */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--bs-secondary-color);
+        }
+        .empty-state .bi { font-size: 2.5rem; display: block; margin-bottom: 1rem; }
+
+        /* ------------------------------------------------------------------ */
+        /* Stats view                                                           */
+        /* ------------------------------------------------------------------ */
+        #stats-view {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .stats-toolbar {
+            flex-shrink: 0;
+            padding: 0.6rem 1.5rem;
+            border-bottom: 1px solid var(--bs-border-color);
+            background: var(--bs-tertiary-bg);
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        #stats-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1.5rem 2rem;
+        }
+        .stats-row { cursor: default; }
+        .stats-row:hover td { background: rgba(13,110,253,0.06); }
+        .stats-th-sort {
+            cursor: pointer;
+            white-space: nowrap;
+            user-select: none;
+        }
+        .stats-th-sort:hover { color: var(--bs-body-color); }
+        .stats-th-sort.active { color: var(--bs-primary); }
+
+        /* ------------------------------------------------------------------ */
+        /* Imported sessions                                                    */
+        /* ------------------------------------------------------------------ */
+        .session-tab-btn {
+            font-size: 0.7rem;
+            padding: 0.1rem 0.45rem;
+            line-height: 1.4;
+            border-color: var(--bs-border-color);
+            color: var(--bs-secondary-color);
+            background: transparent;
+        }
+        .session-tab-btn.active {
+            background: var(--bs-secondary-bg);
+            color: var(--bs-body-color);
+            border-color: var(--bs-border-color);
+        }
+        #tab-imported-btn.active {
+            background: rgba(227,168,17,0.18);
+            color: #e3a811;
+            border-color: rgba(227,168,17,0.4);
+        }
+        .tree-session.imported {
+            border-left-color: #e3a811 !important;
+            background: rgba(227,168,17,0.05);
+            padding-left: 1rem;
+        }
+        .tree-session.imported:hover {
+            background: rgba(227,168,17,0.12);
+        }
+        .tree-session.imported .session-time {
+            color: #e3a811;
+        }
+        .session-export-btn {
+            background: none;
+            border: none;
+            color: var(--bs-secondary-color);
+            padding: 0.1rem 0.25rem;
+            cursor: pointer;
+            border-radius: 0.2rem;
+            flex-shrink: 0;
+            font-size: 0.78rem;
+            line-height: 1;
+        }
+        /* Suppress Bootstrap's dropdown caret */
+        .session-export-btn::after { display: none; }
+        .session-export-btn:hover, .session-export-btn.show {
+            color: var(--bs-body-color);
+            background: rgba(255,255,255,0.08);
+        }
+
+        .imported-delete-btn {
+            background: none;
+            border: none;
+            color: var(--bs-secondary-color);
+            padding: 0.1rem 0.3rem;
+            cursor: pointer;
+            border-radius: 0.2rem;
+            flex-shrink: 0;
+            line-height: 1;
+            font-size: 0.9rem;
+        }
+        .imported-delete-btn:hover {
+            color: #dc3545;
+            background: rgba(220,53,69,0.12);
+        }
+        .import-banner {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.75rem;
+            background: rgba(227,168,17,0.08);
+            border: 1px solid rgba(227,168,17,0.35);
+            border-radius: 0.375rem;
+            padding: 0.65rem 1rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.84rem;
+        }
+        .import-banner .bi { color: #e3a811; flex-shrink: 0; font-size: 1rem; margin-top: 0.1rem; }
+        .import-banner strong { color: #e3a811; }
+
+        /* ------------------------------------------------------------------ */
+        /* Pulse indicator                                                      */
+        /* ------------------------------------------------------------------ */
+        .pulse-dot {
+            display: inline-block;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--bs-success);
+            animation: pulse 2.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.25; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- ======================================================================= -->
+<!-- Navbar                                                                    -->
+<!-- ======================================================================= -->
+<nav class="app-navbar navbar px-3 py-2">
+    <div class="d-flex align-items-center gap-3">
+        <span class="fw-bold d-flex align-items-center gap-2" style="font-size:1rem; letter-spacing:-0.01em;">
+            <img src="/static/logo.png" alt="Uplink" style="height:1.6rem; width:auto;">
+            Uplink
+        </span>
+        <span class="text-secondary" style="font-family:monospace; font-size:0.8rem;">
+            <i class="bi bi-folder2-open me-1"></i>{{ project_dir }}
+        </span>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <span id="last-refresh" class="text-secondary" style="font-size:0.75rem;"></span>
+
+        <input type="file" id="import-file-input" accept=".json" style="display:none;">
+
+        <button id="stats-btn" class="btn btn-sm btn-outline-info py-0 px-2" onclick="openStats()" title="Stats">
+            <i class="bi bi-bar-chart-line me-1"></i>Stats
+        </button>
+        <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="loadSessions(true)" title="Refresh">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+    </div>
+</nav>
+
+<!-- ======================================================================= -->
+<!-- App body                                                                  -->
+<!-- ======================================================================= -->
+<div class="app-body" id="app-body">
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+
+        <!-- Search bar -->
+        <div id="search-section">
+            <div id="search-bar">
+                <i class="bi bi-search" style="color:var(--bs-secondary-color); flex-shrink:0;"></i>
+                <input type="search" id="search-input" placeholder="Search all sessions…" autocomplete="off">
+                <button id="search-clear" onclick="clearSearch()" title="Clear search">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+            <div id="search-results"></div>
+        </div>
+
+        <!-- Sessions tree -->
+        <div id="sessions-section">
+            <div class="sidebar-section-header" id="sessions-header">
+                <span><i class="bi bi-folder-symlink me-1"></i>Sessions</span>
+                <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-xs session-tab-btn" style="color:#e3a811; border-color:rgba(227,168,17,0.4);"
+                        onclick="document.getElementById('import-file-input').click()" title="Import a shared session">
+                    <i class="bi bi-box-arrow-in-down me-1"></i>Import
+                </button>
+                <!-- Toggle shown only when imports exist -->
+                <div id="session-tab-toggle" style="display:none;">
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button id="tab-local-btn" type="button"
+                                class="btn btn-xs session-tab-btn active"
+                                onclick="switchSessionTab('local')">
+                            Local&nbsp;<span id="session-count" class="badge bg-secondary" style="font-size:0.6rem;"></span>
+                        </button>
+                        <button id="tab-imported-btn" type="button"
+                                class="btn btn-xs session-tab-btn"
+                                onclick="switchSessionTab('imported')">
+                            Imported&nbsp;<span id="imported-count" class="badge" style="font-size:0.6rem; background:#e3a811; color:#000;"></span>
+                        </button>
+                    </div>
+                </div>
+                <!-- Shown only when no imports exist -->
+                <span id="session-count-plain" class="badge bg-secondary" style="font-size:0.65rem;"></span>
+                </div><!-- /.d-flex right side -->
+            </div>
+            <div id="sessions-list">
+                <div class="sidebar-item text-secondary">Loading…</div>
+            </div>
+            <div id="imported-list" style="display:none;"></div>
+        </div>
+
+        <!-- Up/down resize handle -->
+        <div class="h-resize-handle" id="h-resize-handle" title="Drag to resize"></div>
+
+        <!-- Prompts -->
+        <div id="prompts-section">
+            <!-- This whole block is sticky so header + Show All never scroll away -->
+            <div id="prompts-sticky">
+                <div class="sidebar-section-header" id="prompts-header">
+                    <span><i class="bi bi-chat-left-text me-1"></i>Prompts</span>
+                    <span id="prompt-count" class="badge bg-secondary" style="font-size:0.65rem;"></span>
+                </div>
+                <div id="prompts-show-all"></div>
+            </div>
+            <div id="prompts-list">
+                <div class="sidebar-item text-secondary">Select a session</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Drag handle -->
+    <div class="resize-handle" id="resize-handle"></div>
+
+    <!-- Conversation -->
+    <div class="conversation-pane" id="conv-pane">
+        <div class="empty-state">
+            <i class="bi bi-chat-square-dots"></i>
+            <p class="mb-1 fw-medium">No session selected</p>
+            <small>Pick a session on the left to browse its conversation</small>
+        </div>
+    </div>
+
+</div>
+
+<!-- ======================================================================= -->
+<!-- Stats view (hidden by default, swaps in place of app-body)               -->
+<!-- ======================================================================= -->
+<div id="stats-view" style="display:none;">
+    <div class="stats-toolbar">
+        <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="closeStats()">
+            <i class="bi bi-arrow-left me-1"></i>Back
+        </button>
+        <h6 class="mb-0"><i class="bi bi-bar-chart-line me-2 text-info"></i>Stats</h6>
+        <div class="ms-3" style="border-left:1px solid var(--bs-border-color); padding-left:1rem;">
+            <ul class="nav nav-pills" id="stats-tabs" style="gap:0.4rem;">
+                <li class="nav-item">
+                    <a class="nav-link py-0 px-2" id="tab-costly" style="font-size:0.82rem;"
+                       href="#" onclick="switchStatsTab('costly-prompts'); return false;">
+                        <i class="bi bi-currency-dollar me-1"></i>Most Costly Prompts
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link py-0 px-2" id="tab-daily" style="font-size:0.82rem;"
+                       href="#" onclick="switchStatsTab('daily-usage'); return false;">
+                        <i class="bi bi-calendar3 me-1"></i>Estimated Daily Usage
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link py-0 px-2" id="tab-cache" style="font-size:0.82rem;"
+                       href="#" onclick="switchStatsTab('cache-efficiency'); return false;">
+                        <i class="bi bi-lightning-charge me-1"></i>Cache Efficiency
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link py-0 px-2" id="tab-context" style="font-size:0.82rem;"
+                       href="#" onclick="switchStatsTab('context-usage'); return false;">
+                        <i class="bi bi-graph-up me-1"></i>Context Usage
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+    <div id="stats-content">
+        <div class="text-center py-5 text-secondary">
+            <i class="bi bi-hourglass-split me-2"></i>Loading…
+        </div>
+    </div>
+</div>
+
+<!-- ======================================================================= -->
+<!-- Status bar                                                                -->
+<!-- ======================================================================= -->
+<div class="app-status">
+    <span><span class="pulse-dot"></span>&nbsp;Auto-refreshing every 5s</span>
+    <span id="status-msg">—</span>
+</div>
+
+<!-- ======================================================================= -->
+<!-- Scripts                                                                   -->
+<!-- ======================================================================= -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
+
+<!-- highlight.js browser build (includes all common languages) -->
+<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+<!-- Chart.js for stats charts -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+<script>
+"use strict";
+
+// Injected by Flask — the directory Uplink was launched from.
+const PROJECT_DIR = {{ project_dir | tojson }};
+
+// ---------------------------------------------------------------------------
+// Token pricing  (USD per million tokens)
+// Sources: Anthropic pricing page, August 2025
+// [input, output, cache_read, cache_creation]
+// ---------------------------------------------------------------------------
+const PRICING = {
+    opus:   [15.00, 75.00, 1.50,  18.75],
+    sonnet: [ 3.00, 15.00, 0.30,   3.75],
+    haiku:  [ 0.80,  4.00, 0.08,   1.00],
+};
+
+const CONTEXT_WINDOW = 200_000;
+
+function contextFillPct(assistantMsgs) {
+    // Use the LAST assistant turn — it has the largest context (tool results accumulated).
+    // Total context = fresh input + cache reads + cache writes (all billed categories).
+    if (!assistantMsgs.length) return 0;
+    const u = assistantMsgs[assistantMsgs.length - 1].usage || {};
+    const total = (u.input_tokens || 0)
+                + (u.cache_read_input_tokens || 0)
+                + (u.cache_creation_input_tokens || 0);
+    return Math.min(100, total / CONTEXT_WINDOW * 100);
+}
+
+function contextColor(pct) {
+    // Smooth green → amber → red across 0–100%
+    function lerp(a, b, t) { return Math.round(a + (b - a) * t); }
+    function hex(h) { const n = parseInt(h.slice(1), 16); return [(n>>16)&255,(n>>8)&255,n&255]; }
+    const [c1, c2, t] = pct <= 60
+        ? [hex('#3fb950'), hex('#e3a811'), pct / 60]
+        : [hex('#e3a811'), hex('#dc3545'), (pct - 60) / 40];
+    return `rgb(${lerp(c1[0],c2[0],t)},${lerp(c1[1],c2[1],t)},${lerp(c1[2],c2[2],t)})`;
+}
+
+function modelTier(model) {
+    if (!model) return 'sonnet';
+    const m = model.toLowerCase();
+    if (m.includes('opus'))  return 'opus';
+    if (m.includes('haiku')) return 'haiku';
+    return 'sonnet';
+}
+
+function calcCost(usage, model) {
+    if (!usage || !Object.keys(usage).length) return null;
+    const [pi, po, pr, pc] = PRICING[modelTier(model)];
+    return (usage.input_tokens              || 0) / 1e6 * pi
+         + (usage.output_tokens             || 0) / 1e6 * po
+         + (usage.cache_read_input_tokens   || 0) / 1e6 * pr
+         + (usage.cache_creation_input_tokens || 0) / 1e6 * pc;
+}
+
+// Dollar amount saved because cache reads were charged at ~10% of input price
+// rather than the full input price. cache_creation premium is NOT subtracted here —
+// this reflects pure read-side savings.
+function calcCacheSavings(usage, model) {
+    const cr = (usage && usage.cache_read_input_tokens) || 0;
+    if (!cr) return 0;
+    const [pi, , pr] = PRICING[modelTier(model)];
+    return cr * (pi - pr) / 1e6;
+}
+
+function aggregateUsage(assistantMsgs) {
+    const total = { input_tokens: 0, output_tokens: 0,
+                    cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+    let model = '';
+    for (const msg of assistantMsgs) {
+        const u = msg.usage || {};
+        total.input_tokens               += u.input_tokens               || 0;
+        total.output_tokens              += u.output_tokens              || 0;
+        total.cache_read_input_tokens    += u.cache_read_input_tokens    || 0;
+        total.cache_creation_input_tokens += u.cache_creation_input_tokens || 0;
+        if (!model && msg.model) model = msg.model;
+    }
+    return { usage: total, model };
+}
+
+function fmtTokens(n) {
+    if (!n) return '0';
+    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+}
+
+function fmtCost(usd) {
+    if (usd === null) return null;
+    if (usd < 0.0001) return '<$0.0001';
+    if (usd < 0.001)  return '$' + usd.toFixed(4);
+    if (usd < 0.01)   return '$' + usd.toFixed(4);
+    if (usd < 1)      return '$' + usd.toFixed(3);
+    return '$' + usd.toFixed(2);
+}
+
+function statsHtml(assistantMsgs, compact = false) {
+    const { usage, model } = aggregateUsage(assistantMsgs);
+    const total = (usage.input_tokens || 0) + (usage.output_tokens || 0);
+    if (!total) return '';
+    const cost    = calcCost(usage, model);
+    const costStr = cost !== null ? fmtCost(cost) : null;
+
+    if (compact) {
+        // Used in sidebar prompt list
+        const parts = [
+            `↑${fmtTokens(usage.input_tokens)} ↓${fmtTokens(usage.output_tokens)}`,
+            costStr,
+        ].filter(Boolean);
+        return `<div class="prompt-stats">${parts.join(' · ')}</div>`;
+    }
+
+    // Used in conversation exchange footer
+    const cacheRead = usage.cache_read_input_tokens || 0;
+    const items = [
+        `<span title="Input tokens"><i class="bi bi-arrow-up-short"></i>${fmtTokens(usage.input_tokens)} in</span>`,
+        `<span title="Output tokens"><i class="bi bi-arrow-down-short"></i>${fmtTokens(usage.output_tokens)} out</span>`,
+        cacheRead ? `<span title="Cache read tokens" style="color:#8b8b00;"><i class="bi bi-lightning-charge-fill"></i>${fmtTokens(cacheRead)} cached</span>` : null,
+        costStr ? `<span class="stat-cost" title="Estimated cost">${costStr}</span>` : null,
+    ].filter(Boolean);
+    return `<div class="exchange-stats">${items.join('')}</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// marked.js setup
+// Use default rendering — hljs is applied after HTML is in the DOM to avoid
+// marked's unstable renderer token API swallowing code block content.
+// ---------------------------------------------------------------------------
+marked.use({ breaks: true, gfm: true });
+
+function applyHighlighting(container) {
+    // Only highlight blocks that have an explicit language class.
+    // Unlabelled blocks (ASCII art, terminal output, etc.) are left as-is
+    // so their content is never dropped.
+    container.querySelectorAll('pre code[class*="language-"]').forEach(el => {
+        try { hljs.highlightElement(el); } catch { /* leave as-is */ }
+    });
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const state = {
+    sessions: [],
+    selectedSessionId: null,
+    selectedSession: null,
+    filteredPromptUuid: null,   // null = show all
+    sessionTab: 'local',        // 'local' | 'imported'
+};
+
+// ---------------------------------------------------------------------------
+// Utilities
+// ---------------------------------------------------------------------------
+function escHtml(str) {
+    return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const now = new Date();
+    const diffDays = Math.floor((now - d) / 86_400_000);
+    const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (diffDays === 0) return `Today ${time}`;
+    if (diffDays === 1) return `Yesterday ${time}`;
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ` ${time}`;
+}
+
+function fmtTime(iso) {
+    if (!iso) return '';
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function setStatus(msg) {
+    document.getElementById('status-msg').textContent = msg;
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    document.getElementById('last-refresh').textContent = `Updated ${now}`;
+}
+
+async function fetchJson(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+    return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Sessions
+// ---------------------------------------------------------------------------
+async function loadSessions(forceRender = false) {
+    try {
+        const sessions = await fetchJson('/api/sessions');
+
+        const prevSignature = state.sessions.map(s => `${s.id}:${s.message_count}`).join(',');
+        const newSignature  = sessions.map(s => `${s.id}:${s.message_count}`).join(',');
+        const changed = prevSignature !== newSignature;
+
+        state.sessions = sessions;
+
+        if (forceRender || changed) {
+            renderSessionsList();
+        }
+
+        // Reload active session if its message count has changed.
+        if (state.selectedSessionId && changed) {
+            const updated = sessions.find(s => s.id === state.selectedSessionId);
+            const current = state.selectedSession;
+            if (updated && current && updated.message_count !== current.messages.length) {
+                await loadSession(state.selectedSessionId, false);
+            }
+        }
+
+        setStatus(`${sessions.length} session${sessions.length !== 1 ? 's' : ''} found`);
+    } catch (e) {
+        setStatus(`Error: ${e.message}`);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Session tree helpers
+// ---------------------------------------------------------------------------
+
+function normPath(p) {
+    return (p || '').replace(/\\/g, '/').replace(/\/+$/, '');
+}
+
+function shortPath(cwd) {
+    if (!cwd) return '';
+    const parts = normPath(cwd).split('/').filter(Boolean);
+    return parts.length > 2 ? '…/' + parts.slice(-2).join('/') : parts.join('/');
+}
+
+function groupByFolder(sessions) {
+    // Returns Map<folder, session[]> ordered by first-seen folder (newest session first).
+    const map = new Map();
+    for (const s of sessions) {
+        const folder = normPath(s.cwd) || '(unknown)';
+        if (!map.has(folder)) map.set(folder, []);
+        map.get(folder).push(s);
+    }
+    // Sessions within each folder are already newest-first from the API.
+    return map;
+}
+
+function switchSessionTab(tab) {
+    state.sessionTab = tab;
+    renderSessionsList();
+}
+
+function renderSessionsList() {
+    const regular  = state.sessions.filter(s => !s.is_imported);
+    const imported = state.sessions.filter(s =>  s.is_imported);
+
+    const toggle      = document.getElementById('session-tab-toggle');
+    const countPlain  = document.getElementById('session-count-plain');
+    const localBtn    = document.getElementById('tab-local-btn');
+    const importedBtn = document.getElementById('tab-imported-btn');
+    const listEl      = document.getElementById('sessions-list');
+    const importedEl  = document.getElementById('imported-list');
+
+    // Update counts wherever the badges live
+    document.getElementById('session-count').textContent  = regular.length;
+    document.getElementById('imported-count').textContent = imported.length;
+
+    if (imported.length > 0) {
+        // Show toggle, hide plain count
+        toggle.style.display     = '';
+        countPlain.style.display = 'none';
+        // Active states
+        localBtn.classList.toggle('active',    state.sessionTab === 'local');
+        importedBtn.classList.toggle('active', state.sessionTab === 'imported');
+    } else {
+        // No imports — always show local, hide toggle
+        toggle.style.display     = 'none';
+        countPlain.style.display = '';
+        countPlain.textContent   = regular.length;
+        state.sessionTab = 'local';
+    }
+
+    // --- local sessions ---
+    if (state.sessionTab === 'local') {
+        listEl.style.display     = '';
+        importedEl.style.display = 'none';
+
+        if (regular.length === 0) {
+            listEl.innerHTML = `<div class="sidebar-item text-secondary" style="padding:0.75rem 1rem;">No sessions found</div>`;
+        } else {
+            // Snapshot currently-open folders so we can restore them after rebuild.
+            const openFolderIds = new Set(
+                [...listEl.querySelectorAll('.tree-children.open')].map(el => el.id)
+            );
+
+            const tree    = groupByFolder(regular);
+            const normCwd = normPath(PROJECT_DIR);
+            let html      = '';
+            for (const [folder, sessions] of tree) {
+                const isCurrentDir = normPath(folder) === normCwd;
+                const folderId     = 'folder-' + btoa(encodeURIComponent(folder)).replace(/[^a-z0-9]/gi, '');
+                // Open if: previously open, or it's the current project dir (first render only when set is empty)
+                const wasOpen  = openFolderIds.has(folderId);
+                const openClass = (wasOpen || (openFolderIds.size === 0 && isCurrentDir)) ? 'open' : '';
+                html += `
+                    <div class="tree-folder-header ${openClass}" onclick="toggleFolder('${folderId}', this)">
+                        <i class="bi bi-chevron-right chevron"></i>
+                        <i class="bi bi-folder2-open folder-icon"></i>
+                        <span style="flex:1; min-width:0;">${escHtml(folder)}</span>
+                        <span class="badge bg-secondary ms-1" style="font-size:0.62rem; flex-shrink:0;">${sessions.length}</span>
+                    </div>
+                    <div class="tree-children ${openClass}" id="${folderId}">
+                        ${sessions.map(s => renderSessionItem(s)).join('')}
+                    </div>`;
+            }
+            listEl.innerHTML = html;
+        }
+
+    // --- imported sessions ---
+    } else {
+        listEl.style.display     = 'none';
+        importedEl.style.display = '';
+        importedEl.innerHTML = imported.length === 0
+            ? `<div class="sidebar-item text-secondary" style="padding:0.75rem 1rem;">No imported sessions</div>`
+            : imported.map(s => renderImportedItem(s)).join('');
+    }
+}
+
+function renderSessionItem(s) {
+    const active  = s.id === state.selectedSessionId ? 'active' : '';
+    const date    = fmtDate(s.start_time);
+    const preview = escHtml((s.preview || '').substring(0, 55));
+    const sid     = escHtml(s.id);
+    return `
+        <div class="tree-session ${active}" onclick="loadSession('${sid}', true)">
+            <div class="d-flex align-items-center justify-content-between gap-1">
+                <span class="session-time">${date}</span>
+                <div class="d-flex align-items-center gap-1" onclick="event.stopPropagation()">
+                    <div class="dropdown">
+                        <button class="session-export-btn dropdown-toggle" data-bs-toggle="dropdown"
+                                title="Export session" aria-expanded="false">
+                            <i class="bi bi-box-arrow-up"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" style="font-size:0.82rem; min-width:160px;">
+                            <li><a class="dropdown-item py-2" href="#"
+                                   onclick="exportJson('${sid}'); return false;">
+                                <i class="bi bi-filetype-json me-2 text-info"></i>JSON
+                            </a></li>
+                            <li><a class="dropdown-item py-2" href="#"
+                                   onclick="exportMarkdown('${sid}'); return false;">
+                                <i class="bi bi-markdown me-2 text-primary"></i>Markdown
+                            </a></li>
+                        </ul>
+                    </div>
+                    <span class="badge bg-secondary" style="font-size:0.62rem;">${s.prompt_count}</span>
+                </div>
+            </div>
+            <div class="session-preview">${preview || '<em>empty</em>'}</div>
+        </div>`;
+}
+
+function renderImportedItem(s) {
+    const active  = s.id === state.selectedSessionId ? 'active' : '';
+    const date    = fmtDate(s.start_time);
+    const preview = escHtml((s.preview || '').substring(0, 45));
+    const from    = escHtml(shortPath(s.imported_from || s.cwd || ''));
+    const sid     = escHtml(s.id);
+    return `
+        <div class="tree-session imported ${active}" onclick="loadSession('${sid}', true)">
+            <div class="d-flex align-items-center justify-content-between gap-1">
+                <span class="session-time">${date}</span>
+                <div class="d-flex align-items-center gap-1" onclick="event.stopPropagation()">
+                    <div class="dropdown">
+                        <button class="session-export-btn dropdown-toggle" data-bs-toggle="dropdown"
+                                title="Export session" aria-expanded="false">
+                            <i class="bi bi-box-arrow-up"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end" style="font-size:0.82rem; min-width:160px;">
+                            <li><a class="dropdown-item py-2" href="#"
+                                   onclick="exportJson('${sid}'); return false;">
+                                <i class="bi bi-filetype-json me-2 text-info"></i>JSON
+                            </a></li>
+                            <li><a class="dropdown-item py-2" href="#"
+                                   onclick="exportMarkdown('${sid}'); return false;">
+                                <i class="bi bi-markdown me-2 text-primary"></i>Markdown
+                            </a></li>
+                        </ul>
+                    </div>
+                    <button class="imported-delete-btn" title="Remove imported session"
+                            onclick="deleteImport('${sid}')">
+                        <i class="bi bi-trash3"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="session-preview">${preview || '<em>empty</em>'}</div>
+            ${from ? `<div class="session-preview" style="font-size:0.68rem; opacity:0.7;">${from}</div>` : ''}
+        </div>`;
+}
+
+function toggleFolder(folderId, headerEl) {
+    const children = document.getElementById(folderId);
+    children.classList.toggle('open');
+    headerEl.classList.toggle('open');
+}
+
+// ---------------------------------------------------------------------------
+// Session detail
+// ---------------------------------------------------------------------------
+async function loadSession(sessionId, resetFilter = true) {
+    try {
+        const session = await fetchJson(`/api/sessions/${sessionId}`);
+        state.selectedSessionId = sessionId;
+        state.selectedSession   = session;
+        if (resetFilter) state.filteredPromptUuid = null;
+
+        renderSessionsList();
+        renderPromptsList();
+        renderConversation();
+    } catch (e) {
+        setStatus(`Error loading session: ${e.message}`);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Prompts list
+// ---------------------------------------------------------------------------
+function renderPromptsList() {
+    const listEl    = document.getElementById('prompts-list');
+    const showAllEl = document.getElementById('prompts-show-all');
+    const countEl   = document.getElementById('prompt-count');
+
+    if (!state.selectedSession) {
+        showAllEl.innerHTML = '';
+        listEl.innerHTML = `<div class="sidebar-item text-secondary">Select a session</div>`;
+        countEl.textContent = '';
+        return;
+    }
+
+    const prompts   = state.selectedSession.messages.filter(m => m.is_user_prompt);
+    countEl.textContent = prompts.length;
+
+    // "Show all" lives in the sticky block so it never scrolls away.
+    const allActive = state.filteredPromptUuid === null ? 'active' : '';
+    showAllEl.innerHTML = `
+        <div class="sidebar-item ${allActive}" onclick="showAll()">
+            <i class="bi bi-layout-text-window-reverse me-1" style="color:#a5d6a7;"></i>
+            <span style="color:#a5d6a7; font-size:0.82rem;">Show all</span>
+        </div>`;
+
+    // Build a lookup: user prompt uuid → following assistant messages
+    const assistantsByPrompt = buildAssistantLookup(state.selectedSession.messages);
+
+    // Individual prompts scroll normally beneath the sticky block.
+    listEl.innerHTML = prompts.map((msg, i) => {
+        const active       = state.filteredPromptUuid === msg.uuid ? 'active' : '';
+        const preview      = escHtml((msg.text || '').substring(0, 60));
+        const assistants   = assistantsByPrompt[msg.uuid] || [];
+        const compactStats = statsHtml(assistants, true);
+        const pct          = contextFillPct(assistants);
+        const barHtml      = pct > 0 ? `
+            <div class="ctx-bar-track" title="Context window: ${pct.toFixed(0)}% of 200k">
+                <div class="ctx-bar-fill" style="width:${pct.toFixed(1)}%; background:${contextColor(pct)};"></div>
+            </div>` : '';
+        return `
+            <div class="sidebar-item ${active}" onclick="filterToPrompt('${msg.uuid}')">
+                <div class="d-flex align-items-start">
+                    <span class="prompt-num">${i + 1}</span>
+                    <span class="item-sub flex-1" style="white-space:normal; line-height:1.35;">${preview}</span>
+                </div>
+                ${compactStats}
+                ${barHtml}
+            </div>`;
+    }).join('');
+}
+
+function buildAssistantLookup(messages) {
+    // Returns { [userPromptUuid]: [assistantMsg, ...] }
+    const lookup = {};
+    let currentKey = null;
+    for (const msg of messages) {
+        if (msg.is_user_prompt) {
+            currentKey = msg.uuid;
+            lookup[currentKey] = [];
+        } else if (msg.role === 'assistant' && currentKey) {
+            lookup[currentKey].push(msg);
+        }
+    }
+    return lookup;
+}
+
+// ---------------------------------------------------------------------------
+// Conversation rendering
+// ---------------------------------------------------------------------------
+function renderConversation() {
+    const pane = document.getElementById('conv-pane');
+
+    if (!state.selectedSession) {
+        pane.innerHTML = `
+            <div class="empty-state">
+                <i class="bi bi-chat-square-dots"></i>
+                <p class="fw-medium mb-1">No session selected</p>
+                <small>Pick a session on the left to browse its conversation</small>
+            </div>`;
+        return;
+    }
+
+    const exchanges = buildExchanges(state.selectedSession.messages);
+
+    const visible = state.filteredPromptUuid
+        ? exchanges.filter(ex => ex.userMsg?.uuid === state.filteredPromptUuid)
+        : exchanges;
+
+    let html = '';
+
+    // Imported session banner
+    if (state.selectedSession.is_imported) {
+        const from = escHtml(state.selectedSession.imported_from || state.selectedSession.cwd || 'unknown project');
+        html += `
+            <div class="import-banner">
+                <i class="bi bi-box-arrow-in-down"></i>
+                <div>
+                    <strong>Imported session</strong> — this conversation was shared from another machine or team member.
+                    <div style="margin-top:0.25rem; color:var(--bs-secondary-color); font-size:0.79rem;">
+                        Original project: <code style="font-size:0.78rem;">${from}</code>
+                        &ensp;·&ensp;
+                        <a href="#" onclick="deleteImport('${escHtml(state.selectedSessionId)}'); return false;"
+                           style="color:#e3a811;">Remove import</a>
+                    </div>
+                </div>
+            </div>`;
+    }
+
+    if (state.filteredPromptUuid !== null) {
+        html += `
+            <div class="filter-banner">
+                <span><i class="bi bi-funnel me-1"></i>Showing single exchange</span>
+                <button class="btn btn-sm btn-outline-warning py-0 px-2" onclick="showAll()">
+                    <i class="bi bi-x me-1"></i>Show all
+                </button>
+            </div>`;
+    }
+
+    if (visible.length === 0) {
+        html += `
+            <div class="empty-state">
+                <i class="bi bi-chat-square"></i>
+                <p>No messages yet</p>
+            </div>`;
+    } else {
+        html += visible.map(renderExchange).join('');
+    }
+
+    pane.innerHTML = html;
+    applyHighlighting(pane);
+    if (!state.filteredPromptUuid) {
+        pane.scrollTop = pane.scrollHeight;
+    } else {
+        pane.scrollTop = 0;
+    }
+}
+
+function buildExchanges(messages) {
+    const exchanges = [];
+    let current = null;
+    for (const msg of messages) {
+        if (msg.is_user_prompt) {
+            if (current) exchanges.push(current);
+            current = { userMsg: msg, assistantMsgs: [] };
+        } else if (msg.role === 'assistant' && current) {
+            current.assistantMsgs.push(msg);
+        }
+    }
+    if (current) exchanges.push(current);
+    return exchanges;
+}
+
+function renderExchange(ex) {
+    const pct         = contextFillPct(ex.assistantMsgs);
+    const borderColor = pct > 0 ? contextColor(pct) : 'transparent';
+    const ts          = fmtTime(ex.userMsg.timestamp);
+    let html = `<div class="exchange" data-uuid="${ex.userMsg.uuid}"
+        style="border-left-color:${borderColor};" title="Context: ${pct.toFixed(0)}% of 200k">`;
+
+    // User message
+    html += `
+        <div class="msg-header user">
+            <i class="bi bi-person-fill"></i> You
+            <span class="ts">${ts}</span>
+        </div>
+        <div class="msg-body-user">${escHtml(ex.userMsg.text)}</div>`;
+
+    // Assistant message(s)
+    for (const msg of ex.assistantMsgs) {
+        html += `
+            <div class="msg-header claude mt-3">
+                <i class="bi bi-robot"></i> Claude
+            </div>
+            <div class="msg-body-claude">${renderMsgContent(msg)}</div>`;
+    }
+
+    // Stats footer — tokens + cost aggregated across all assistant turns
+    html += statsHtml(ex.assistantMsgs);
+
+    html += `</div>`;
+    return html;
+}
+
+function renderMsgContent(msg) {
+    let html = '';
+    for (const block of msg.content) {
+        if (block.type === 'text') {
+            html += marked.parse(block.text || '');
+        } else if (block.type === 'tool_use') {
+            html += renderToolBlock(block);
+        }
+        // tool_result blocks in assistant messages are skipped
+    }
+    return html;
+}
+
+function renderToolBlock(block) {
+    const uid = 'tb-' + Math.random().toString(36).slice(2, 9);
+    return `
+        <div class="tool-block">
+            <div class="tool-header" onclick="toggleTool('${uid}')">
+                <i class="bi bi-terminal"></i>
+                <span>${escHtml(block.tool_name || 'tool')}</span>
+                <i class="bi bi-chevron-down ms-auto"></i>
+            </div>
+            <div class="tool-body" id="${uid}">
+                <pre>${escHtml(block.text || '')}</pre>
+            </div>
+        </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Actions
+// ---------------------------------------------------------------------------
+function filterToPrompt(uuid) {
+    state.filteredPromptUuid = uuid;
+    renderPromptsList();
+    renderConversation();
+}
+
+function showAll() {
+    state.filteredPromptUuid = null;
+    renderPromptsList();
+    renderConversation();
+}
+
+function toggleTool(id) {
+    document.getElementById(id).classList.toggle('open');
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+(function initSearch() {
+    const input   = document.getElementById('search-input');
+    const section = document.getElementById('search-section');
+    const sessionsSection = document.getElementById('sessions-section');
+    const promptsSection  = document.getElementById('prompts-section');
+    const handleEl        = document.getElementById('h-resize-handle');
+
+    let debounce = null;
+    let lastQuery = '';
+
+    input.addEventListener('input', () => {
+        const q = input.value.trim();
+        clearTimeout(debounce);
+        if (!q) { clearSearch(); return; }
+        debounce = setTimeout(() => runSearch(q), 280);
+    });
+
+    // Esc clears search.
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { clearSearch(); input.blur(); }
+    });
+
+    window.runSearch = async function(q) {
+        lastQuery = q;
+        setSearchActive(true);
+        const resultsEl = document.getElementById('search-results');
+        resultsEl.innerHTML = `<div class="search-empty"><i class="bi bi-hourglass-split me-1"></i>Searching…</div>`;
+        try {
+            const results = await fetchJson(`/api/search?q=${encodeURIComponent(q)}`);
+            if (input.value.trim() !== q) return; // stale response
+            renderSearchResults(results, q);
+        } catch (e) {
+            resultsEl.innerHTML = `<div class="search-empty text-danger">Error: ${escHtml(e.message)}</div>`;
+        }
+    };
+
+    window.clearSearch = function() {
+        input.value = '';
+        lastQuery = '';
+        setSearchActive(false);
+        document.getElementById('search-results').innerHTML = '';
+    };
+
+    function setSearchActive(active) {
+        section.classList.toggle('active', active);
+        sessionsSection.style.display = active ? 'none' : '';
+        promptsSection.style.display  = active ? 'none' : '';
+        handleEl.style.display        = active ? 'none' : '';
+    }
+
+    function renderSearchResults(results, q) {
+        const el = document.getElementById('search-results');
+        if (results.length === 0) {
+            el.innerHTML = `<div class="search-empty">No results for <strong>${escHtml(q)}</strong></div>`;
+            return;
+        }
+
+        const countHtml = `<div class="search-empty" style="padding:0.5rem 1rem; text-align:left; font-size:0.75rem;">
+            ${results.length} result${results.length !== 1 ? 's' : ''}</div>`;
+
+        el.innerHTML = countHtml + results.map(r => {
+            const isActive  = r.session_id === state.selectedSessionId
+                           && r.prompt_uuid === state.filteredPromptUuid;
+            const roleIcon  = r.role === 'user' ? 'bi-person-fill' : 'bi-robot';
+            const roleColor = r.role === 'user' ? '#58a6ff' : '#3fb950';
+            const folder    = escHtml(shortPath(r.session_cwd));
+            const date      = fmtDate(r.session_start);
+            const snippet   = highlight(escHtml(r.snippet), escHtml(q));
+            return `
+                <div class="search-result ${isActive ? 'active' : ''}"
+                     onclick="jumpToResult('${r.session_id}','${r.prompt_uuid}')">
+                    <div class="search-result-meta">
+                        <i class="bi ${roleIcon} me-1" style="color:${roleColor};"></i>${folder} &middot; ${date}
+                    </div>
+                    <div class="search-result-snippet">${snippet}</div>
+                </div>`;
+        }).join('');
+    }
+
+    function highlight(escapedText, escapedQuery) {
+        if (!escapedQuery) return escapedText;
+        const re = new RegExp(escapedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        return escapedText.replace(re, m => `<mark class="hl">${m}</mark>`);
+    }
+
+    window.jumpToResult = async function(sessionId, promptUuid) {
+        await loadSession(sessionId, false);
+        if (promptUuid) filterToPrompt(promptUuid);
+    };
+})();
+
+// ---------------------------------------------------------------------------
+// Resizable sidebar — horizontal split (left ↔ right)
+// ---------------------------------------------------------------------------
+(function initResize() {
+    const handle  = document.getElementById('resize-handle');
+    const sidebar = document.querySelector('.sidebar');
+    const STORAGE_KEY = 'uplink-sidebar-width';
+    const MIN = 160;
+    const MAX = 600;
+
+    // Restore saved width.
+    const saved = parseInt(localStorage.getItem(STORAGE_KEY), 10);
+    if (saved && saved >= MIN && saved <= MAX) {
+        sidebar.style.width = saved + 'px';
+    }
+
+    let dragging = false;
+    let startX = 0;
+    let startWidth = 0;
+
+    handle.addEventListener('mousedown', e => {
+        dragging   = true;
+        startX     = e.clientX;
+        startWidth = sidebar.offsetWidth;
+        handle.classList.add('dragging');
+        document.body.style.cursor    = 'col-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const delta    = e.clientX - startX;
+        const newWidth = Math.min(MAX, Math.max(MIN, startWidth + delta));
+        sidebar.style.width = newWidth + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('dragging');
+        document.body.style.cursor     = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem(STORAGE_KEY, sidebar.offsetWidth);
+    });
+})();
+
+// ---------------------------------------------------------------------------
+// Resizable sidebar sections — vertical split (sessions ↕ prompts)
+// ---------------------------------------------------------------------------
+(function initVerticalResize() {
+    const handle  = document.getElementById('h-resize-handle');
+    const section = document.getElementById('sessions-section');
+    const sidebar = document.querySelector('.sidebar');
+    const STORAGE_KEY = 'uplink-sessions-height-px';
+    const MIN_PX = 80;
+
+    function maxPx() { return sidebar.offsetHeight - 80; }
+
+    // Set initial pixel height — restore saved or default to 45% of sidebar.
+    function setHeight(px) {
+        section.style.height = Math.min(maxPx(), Math.max(MIN_PX, px)) + 'px';
+    }
+
+    const saved = parseInt(localStorage.getItem(STORAGE_KEY), 10);
+    // Defer until layout is painted so sidebar.offsetHeight is valid.
+    requestAnimationFrame(() => setHeight(saved || Math.round(sidebar.offsetHeight * 0.45)));
+
+    let dragging = false;
+    let startY   = 0;
+    let startH   = 0;
+
+    handle.addEventListener('mousedown', e => {
+        dragging = true;
+        startY   = e.clientY;
+        startH   = section.offsetHeight;
+        handle.classList.add('dragging');
+        document.body.style.cursor     = 'row-resize';
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        setHeight(startH + (e.clientY - startY));
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        handle.classList.remove('dragging');
+        document.body.style.cursor     = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem(STORAGE_KEY, section.offsetHeight);
+    });
+})();
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+
+async function _resolveSession(sessionId) {
+    if (state.selectedSession && state.selectedSession.id === sessionId) {
+        return state.selectedSession;
+    }
+    return fetchJson(`/api/sessions/${sessionId}`);
+}
+
+async function exportJson(sessionId) {
+    const session = await _resolveSession(sessionId);
+    if (!session) return;
+    const payload = {
+        _uplink: { format: 'session-export-v1', exported_at: new Date().toISOString() },
+        session,
+    };
+    downloadFile(
+        JSON.stringify(payload, null, 2),
+        `uplink-session-${session.id.slice(0, 8)}.json`,
+        'application/json',
+    );
+}
+
+async function exportMarkdown(sessionId) {
+    const session = await _resolveSession(sessionId);
+    if (!session) return;
+    const md = sessionToMarkdown(session);
+    downloadFile(md, `uplink-session-${session.id.slice(0, 8)}.md`, 'text/markdown');
+}
+
+function sessionToMarkdown(session) {
+    const exchanges = buildExchanges(session.messages);
+    const date = session.start_time ? new Date(session.start_time).toLocaleString() : 'unknown';
+    const promptCount = session.messages.filter(m => m.is_user_prompt).length;
+
+    let md = `# Claude Code Session\n\n`;
+    md += `| | |\n|---|---|\n`;
+    md += `| **Project** | \`${session.cwd}\` |\n`;
+    md += `| **Date** | ${date} |\n`;
+    md += `| **Session ID** | \`${session.id}\` |\n`;
+    md += `| **Prompts** | ${promptCount} |\n\n`;
+    md += `---\n\n`;
+
+    exchanges.forEach((ex, i) => {
+        const ts = ex.userMsg.timestamp
+            ? new Date(ex.userMsg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '';
+        md += `## Prompt ${i + 1}${ts ? ' · ' + ts : ''}\n\n`;
+
+        // User turn — blockquote
+        const userText = ex.userMsg.text || '';
+        md += `**You:**\n\n`;
+        md += userText.split('\n').map(l => `> ${l}`).join('\n') + '\n\n';
+
+        // Assistant turn(s)
+        for (const msg of ex.assistantMsgs) {
+            md += `**Claude:**\n\n`;
+            for (const block of msg.content) {
+                if (block.type === 'text' && block.text) {
+                    md += block.text.trimEnd() + '\n\n';
+                } else if (block.type === 'tool_use') {
+                    md += `<details>\n<summary>🔧 Tool: <code>${block.tool_name || 'unknown'}</code></summary>\n\n`;
+                    md += `\`\`\`json\n${block.text || ''}\n\`\`\`\n\n</details>\n\n`;
+                }
+            }
+        }
+
+        if (i < exchanges.length - 1) md += `---\n\n`;
+    });
+
+    return md;
+}
+
+function downloadFile(content, filename, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url  = URL.createObjectURL(blob);
+    const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Import
+// ---------------------------------------------------------------------------
+
+(function initImport() {
+    const fileInput = document.getElementById('import-file-input');
+
+    fileInput.addEventListener('change', async () => {
+        const file = fileInput.files[0];
+        if (!file) return;
+        fileInput.value = ''; // reset so same file can be re-imported
+
+        let data;
+        try {
+            data = JSON.parse(await file.text());
+        } catch {
+            setStatus('Import failed: file is not valid JSON');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            const json = await res.json();
+            if (!res.ok) {
+                setStatus(`Import failed: ${json.error}`);
+                return;
+            }
+            setStatus(`Session imported successfully`);
+            await loadSessions(true);
+            await loadSession(json.session_id, true);
+        } catch (e) {
+            setStatus(`Import failed: ${e.message}`);
+        }
+    });
+})();
+
+async function deleteImport(sessionId) {
+    if (!confirm('Remove this imported session? This cannot be undone.')) return;
+    try {
+        await fetch(`/api/import/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+        state.selectedSessionId = null;
+        state.selectedSession   = null;
+        await loadSessions(true);
+        renderPromptsList();
+        renderConversation();
+        setStatus('Imported session removed');
+    } catch (e) {
+        setStatus(`Delete failed: ${e.message}`);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stats view
+// ---------------------------------------------------------------------------
+(function initStats() {
+    let statsData   = [];       // all exchanges with any token usage
+    let activeTab   = 'costly-prompts';
+    let statsWindow = 7;        // days shown in time-series charts
+    let showTokens  = false;    // toggle token bars on daily chart
+    let sortCol     = 'cost';
+    let sortDir     = 'desc';
+    let cacheCharts = [];       // Chart.js instances for cache efficiency tab
+    let selectedContextSession = null;
+
+    // ---- Public API --------------------------------------------------------
+
+    window.openStats = async function() {
+        document.getElementById('app-body').style.display   = 'none';
+        document.getElementById('stats-view').style.display = 'flex';
+        document.getElementById('stats-btn').classList.add('active');
+        await loadStatsData();
+    };
+
+    window.closeStats = function() {
+        destroyChart();
+        document.getElementById('stats-view').style.display = 'none';
+        document.getElementById('app-body').style.display   = 'flex';
+        document.getElementById('stats-btn').classList.remove('active');
+    };
+
+    window.switchStatsTab = function(tab) {
+        activeTab = tab;
+        updateTabHighlight();
+        renderActiveTab();
+    };
+
+    window.setStatsWindow = function(days) {
+        statsWindow = days;
+        renderActiveTab();
+    };
+
+    window.toggleTokenBars = function() {
+        showTokens = !showTokens;
+        renderDailyUsage();
+    };
+
+    window.statsSortBy = function(col) {
+        if (sortCol === col) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            sortCol = col;
+            sortDir = (col === 'prompt' || col === 'project' || col === 'date' || col === 'model') ? 'asc' : 'desc';
+        }
+        renderCostlyPrompts();
+    };
+
+    window.jumpFromStats = async function(sessionId, promptUuid) {
+        closeStats();
+        await loadSession(sessionId, false);
+        if (promptUuid) filterToPrompt(promptUuid);
+    };
+
+    // ---- Internals ---------------------------------------------------------
+
+    function destroyChart() {
+        if (window._dailyChart) { window._dailyChart.destroy(); window._dailyChart = null; }
+        if (window._ctxChart)   { window._ctxChart.destroy();   window._ctxChart = null; }
+        cacheCharts.forEach(c => c.destroy());
+        cacheCharts = [];
+    }
+
+    function updateTabHighlight() {
+        document.getElementById('tab-costly').classList.toggle('active',  activeTab === 'costly-prompts');
+        document.getElementById('tab-daily').classList.toggle('active',   activeTab === 'daily-usage');
+        document.getElementById('tab-cache').classList.toggle('active',   activeTab === 'cache-efficiency');
+        document.getElementById('tab-context').classList.toggle('active', activeTab === 'context-usage');
+    }
+
+    async function loadStatsData() {
+        const content = document.getElementById('stats-content');
+        content.innerHTML = `<div class="text-center py-5 text-secondary">
+            <i class="bi bi-hourglass-split me-2"></i>Loading usage data across all sessions…</div>`;
+        updateTabHighlight();
+        try {
+            const raw = await fetchJson('/api/stats/costly-prompts');
+            statsData = raw.map(r => ({
+                ...r,
+                _cost: calcCost(r.usage, r.model) ?? 0,
+            })).filter(r => (r.usage.input_tokens || 0) + (r.usage.output_tokens || 0) > 0);
+            renderActiveTab();
+        } catch (e) {
+            content.innerHTML = `<div class="text-danger p-3">Error: ${escHtml(e.message)}</div>`;
+        }
+    }
+
+    function renderActiveTab() {
+        if      (activeTab === 'costly-prompts')  renderCostlyPrompts();
+        else if (activeTab === 'daily-usage')      renderDailyUsage();
+        else if (activeTab === 'context-usage')    renderContextUsage();
+        else                                       renderCacheEfficiency();
+    }
+
+    // ---- Tab 1: Most Costly Prompts ----------------------------------------
+
+    function sortedRows() {
+        const dir = sortDir === 'asc' ? 1 : -1;
+        return [...statsData].sort((a, b) => {
+            let av, bv;
+            switch (sortCol) {
+                case 'cost':    av = a._cost;                              bv = b._cost;                              break;
+                case 'input':   av = a.usage.input_tokens             ||0; bv = b.usage.input_tokens             ||0; break;
+                case 'output':  av = a.usage.output_tokens            ||0; bv = b.usage.output_tokens            ||0; break;
+                case 'cached':  av = a.usage.cache_read_input_tokens  ||0; bv = b.usage.cache_read_input_tokens  ||0; break;
+                case 'prompt':  av = (a.prompt_text||'').toLowerCase();    bv = (b.prompt_text||'').toLowerCase();    break;
+                case 'project': av = shortPath(a.session_cwd).toLowerCase(); bv = shortPath(b.session_cwd).toLowerCase(); break;
+                case 'date':    av = a.session_start||'';                  bv = b.session_start||'';                  break;
+                case 'model':   av = shortModel(a.model).label;            bv = shortModel(b.model).label;            break;
+                case 'depth':   av = a.prompt_index||0;                    bv = b.prompt_index||0;                    break;
+                case 'context': av = a.context_tokens||0;                  bv = b.context_tokens||0;                  break;
+                default:        av = a._cost;                              bv = b._cost;
+            }
+            if (av < bv) return -dir;
+            if (av > bv) return  dir;
+            return 0;
+        });
+    }
+
+    // Abbreviated model name + colour for table cells
+    function shortModel(model) {
+        if (!model) return { label: '—', color: 'var(--bs-secondary-color)' };
+        const m = model.toLowerCase();
+        if (m.includes('opus'))  return { label: 'Opus',   color: '#c678dd' };
+        if (m.includes('haiku')) return { label: 'Haiku',  color: '#56d3c7' };
+        return                          { label: 'Sonnet', color: '#58a6ff' };
+    }
+
+    // "1st", "2nd", "3rd", "4th", … ordinal from 0-based index
+    function ordinal(n) {
+        const i = n + 1;
+        const s = ['th','st','nd','rd'];
+        const v = i % 100;
+        return i + (s[(v - 20) % 10] || s[v] || s[0]);
+    }
+
+    function thHtml(label, key, extraStyle) {
+        const active = key === sortCol;
+        const icon   = active ? (sortDir === 'asc' ? 'bi-sort-up-alt' : 'bi-sort-down-alt') : 'bi-chevron-expand';
+        const style  = extraStyle ? ` style="${extraStyle}"` : '';
+        return `<th class="stats-th-sort${active ? ' active' : ''}" onclick="statsSortBy('${key}')"${style}>
+            ${escHtml(label)}&nbsp;<i class="bi ${icon}" style="font-size:0.65rem; opacity:0.7;"></i></th>`;
+    }
+
+    function renderCostlyPrompts() {
+        destroyChart();
+        const content = document.getElementById('stats-content');
+
+        if (statsData.length === 0) {
+            content.innerHTML = noDataHtml('bi-currency-dollar');
+            return;
+        }
+
+        const rows   = sortedRows();
+        const header = `<tr>
+            <th style="width:2.5rem; color:var(--bs-secondary-color);">#</th>
+            ${thHtml('Prompt',    'prompt',  'min-width:180px; max-width:300px;')}
+            ${thHtml('Project',   'project', 'min-width:100px;')}
+            ${thHtml('Date',      'date',    'min-width:120px;')}
+            ${thHtml('Model',     'model',   'min-width:70px;')}
+            ${thHtml('Depth',     'depth',   'min-width:60px;')}
+            ${thHtml('Context',   'context', 'min-width:80px;')}
+            ${thHtml('Input ↑',   'input',   'text-align:right; min-width:75px;')}
+            ${thHtml('Output ↓',  'output',  'text-align:right; min-width:75px;')}
+            ${thHtml('Cached ⚡',  'cached',  'text-align:right; min-width:75px;')}
+            ${thHtml('Cost',      'cost',    'text-align:right; min-width:75px;')}
+        </tr>`;
+
+        const body = rows.map((r, i) => {
+            const cost    = r._cost > 0 ? fmtCost(r._cost) : '—';
+            const input   = fmtTokens(r.usage.input_tokens            || 0);
+            const output  = fmtTokens(r.usage.output_tokens           || 0);
+            const cached  = fmtTokens(r.usage.cache_read_input_tokens || 0);
+            const project = escHtml(shortPath(r.session_cwd));
+            const date    = fmtDate(r.session_start);
+            const preview = escHtml((r.prompt_text || '').substring(0, 90));
+            const tip     = escHtml(r.prompt_text || '');
+            const sid     = escHtml(r.session_id);
+            const puuid   = escHtml(r.prompt_uuid || '');
+            const mdl      = shortModel(r.model);
+            const depth    = ordinal(r.prompt_index || 0);
+            const depthTip = `${depth} prompt in this session`;
+            const ctxPct   = r.context_tokens > 0
+                ? Math.min(100, r.context_tokens / CONTEXT_WINDOW * 100) : null;
+            const ctxRisk  = ctxPct === null ? '—'
+                : ctxPct >= 90 ? 'Critical'
+                : ctxPct >= 75 ? 'High'
+                : ctxPct >= 50 ? 'Medium'
+                : 'Low';
+            const ctxColor = ctxPct !== null ? contextColor(ctxPct) : 'var(--bs-secondary-color)';
+            const ctxCell  = ctxPct !== null ? `
+                <span style="color:${ctxColor}; font-weight:600; font-family:monospace; font-size:0.82rem;">${ctxPct.toFixed(0)}%</span>
+                <div style="height:3px; background:rgba(255,255,255,0.07); border-radius:2px; margin-top:2px; overflow:hidden; min-width:48px;">
+                    <div style="width:${ctxPct.toFixed(1)}%; height:100%; background:${ctxColor}; border-radius:2px;"></div>
+                </div>` : '<span class="text-secondary">—</span>';
+            return `
+                <tr class="stats-row" title="Double-click to open this exchange"
+                    ondblclick="jumpFromStats('${sid}','${puuid}')">
+                    <td class="text-secondary">${i + 1}</td>
+                    <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+                        title="${tip}">${preview}</td>
+                    <td class="text-secondary" style="font-size:0.8rem;">${project}</td>
+                    <td class="text-secondary" style="font-size:0.8rem; white-space:nowrap;">${date}</td>
+                    <td style="font-size:0.8rem; font-weight:600; color:${mdl.color};">${mdl.label}</td>
+                    <td class="text-secondary" style="font-size:0.8rem;" title="${depthTip}">${depth}</td>
+                    <td style="font-size:0.8rem;" title="Context rot risk: ${ctxRisk} — ${ctxPct !== null ? ctxPct.toFixed(1) + '% of 200k context used' : 'no data'}">${ctxCell}</td>
+                    <td class="text-end" style="font-family:monospace; font-size:0.82rem;">${input}</td>
+                    <td class="text-end" style="font-family:monospace; font-size:0.82rem;">${output}</td>
+                    <td class="text-end" style="font-family:monospace; font-size:0.82rem; color:#8b8b00;">${cached}</td>
+                    <td class="text-end stat-cost" style="font-family:monospace; font-size:0.82rem;">${cost}</td>
+                </tr>`;
+        }).join('');
+
+        content.innerHTML = `
+            <div class="d-flex align-items-center gap-3 mb-3">
+                <span class="badge bg-secondary">${rows.length} exchange${rows.length !== 1 ? 's' : ''} with usage data</span>
+                <small class="text-secondary">Double-click any row to open that exchange</small>
+            </div>
+            <div style="overflow-x:auto;">
+                <table class="table table-hover table-sm align-middle" style="font-size:0.88rem;">
+                    <thead class="table-dark" style="position:sticky; top:0; z-index:2;">${header}</thead>
+                    <tbody>${body}</tbody>
+                </table>
+            </div>`;
+    }
+
+    // ---- Tab 2: Estimated Daily Usage --------------------------------------
+
+    const MONTHLY_BUDGET = 300;
+
+    function renderDailyUsage() {
+        destroyChart();
+        const content = document.getElementById('stats-content');
+
+        if (statsData.length === 0) {
+            content.innerHTML = noDataHtml('bi-calendar3');
+            return;
+        }
+
+        // Build date labels (YYYY-MM-DD) for the last N days in local time
+        const now    = new Date();
+        const labels = [];
+        for (let i = statsWindow - 1; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            labels.push(d.toLocaleDateString('en-CA'));
+        }
+
+        // Build complete all-time daily aggregation maps
+        const allCostsByDate   = {};
+        const allInputByDate   = {};
+        const allOutputByDate  = {};
+        const allCachedByDate  = {};
+        for (const row of statsData) {
+            if (!row.session_start) continue;
+            const key = new Date(row.session_start).toLocaleDateString('en-CA');
+            allCostsByDate[key]  = (allCostsByDate[key]  || 0) + row._cost;
+            allInputByDate[key]  = (allInputByDate[key]  || 0) + (row.usage.input_tokens              || 0);
+            allOutputByDate[key] = (allOutputByDate[key] || 0) + (row.usage.output_tokens             || 0);
+            allCachedByDate[key] = (allCachedByDate[key] || 0) + (row.usage.cache_read_input_tokens   || 0);
+        }
+
+        // Visible-window series
+        const costs        = labels.map(l => allCostsByDate[l]  || 0);
+        const inputTokens  = labels.map(l => allInputByDate[l]  || 0);
+        const outputTokens = labels.map(l => allOutputByDate[l] || 0);
+        const cachedTokens = labels.map(l => allCachedByDate[l] || 0);
+        const total        = costs.reduce((a, b) => a + b, 0);
+
+        // Remaining monthly budget (needs full month rollup, not just the window)
+        const remaining = labels.map(dateStr => {
+            const d          = new Date(dateStr + 'T12:00:00');
+            const monthStart = new Date(d.getFullYear(), d.getMonth(), 1)
+                                   .toLocaleDateString('en-CA');
+            let spent = 0;
+            for (let cur = new Date(monthStart + 'T12:00:00');
+                 cur.toLocaleDateString('en-CA') <= dateStr;
+                 cur.setDate(cur.getDate() + 1)) {
+                spent += allCostsByDate[cur.toLocaleDateString('en-CA')] || 0;
+            }
+            return Math.max(0, MONTHLY_BUDGET - spent);
+        });
+
+        const dispLabels = labels.map(l =>
+            new Date(l + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }));
+
+        const todayRemaining = remaining[remaining.length - 1];
+        const tickSize       = statsWindow <= 30 ? 11 : statsWindow <= 90 ? 9 : 8;
+
+        const windowBtns = [
+            [7,   '1 Week'],
+            [14,  '2 Weeks'],
+            [30,  '1 Month'],
+            [180, '6 Months'],
+            [365, '1 Year'],
+        ].map(([d, label]) =>
+            `<button class="btn btn-sm btn-outline-secondary py-0 px-2${d === statsWindow ? ' active' : ''}"
+                     onclick="setStatsWindow(${d})" style="font-size:0.8rem;">${escHtml(label)}</button>`
+        ).join('');
+
+        content.innerHTML = `
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+                <span class="text-secondary" style="font-size:0.82rem;">Window:</span>
+                <div class="btn-group btn-group-sm">${windowBtns}</div>
+                <button class="btn btn-sm py-0 px-2 ms-2 ${showTokens ? 'btn-info' : 'btn-outline-secondary'}"
+                        onclick="toggleTokenBars()" style="font-size:0.8rem;"
+                        title="Show input / output / cached token bars">
+                    <i class="bi bi-bar-chart-steps me-1"></i>Tokens
+                </button>
+                <span class="ms-2 badge bg-secondary">Period spend: ${fmtCost(total)}</span>
+                <span class="badge" style="background:#e3a811; color:#000;">
+                    Budget remaining today: ${fmtCost(todayRemaining)}
+                </span>
+            </div>
+            <div style="position:relative; height:420px;">
+                <canvas id="daily-chart"></canvas>
+            </div>`;
+
+        // Left axis shows either cost or token counts — never both at the same time.
+        const barDatasets = showTokens
+            ? [
+                {
+                    type: 'bar', label: 'Input tokens',  data: inputTokens,
+                    yAxisID: 'y',
+                    backgroundColor: 'rgba(88,166,255,0.6)',  borderColor: '#58a6ff',
+                    borderWidth: 1, borderRadius: 4, order: 2,
+                },
+                {
+                    type: 'bar', label: 'Output tokens', data: outputTokens,
+                    yAxisID: 'y',
+                    backgroundColor: 'rgba(188,140,255,0.6)', borderColor: '#bc8cff',
+                    borderWidth: 1, borderRadius: 4, order: 2,
+                },
+                {
+                    type: 'bar', label: 'Cached tokens', data: cachedTokens,
+                    yAxisID: 'y',
+                    backgroundColor: 'rgba(86,211,199,0.6)',  borderColor: '#56d3c7',
+                    borderWidth: 1, borderRadius: 4, order: 2,
+                },
+            ]
+            : [
+                {
+                    type: 'bar', label: 'Daily spend', data: costs,
+                    yAxisID: 'y',
+                    backgroundColor: costs.map(c =>
+                        c > 0 ? 'rgba(63,185,80,0.6)' : 'rgba(100,100,100,0.15)'),
+                    borderColor: costs.map(c =>
+                        c > 0 ? '#3fb950' : 'rgba(100,100,100,0.3)'),
+                    borderWidth: 1, borderRadius: 4, order: 2,
+                },
+            ];
+
+        const datasets = [
+            ...barDatasets,
+            {
+                type: 'line', label: 'Budget remaining', data: remaining,
+                yAxisID: 'y1',
+                borderColor: '#e3a811', backgroundColor: 'rgba(227,168,17,0.08)',
+                borderWidth: 2,
+                pointRadius: statsWindow <= 30 ? 3 : 1, pointHoverRadius: 5,
+                pointBackgroundColor: '#e3a811',
+                tension: 0.3, fill: false, order: 1,
+            },
+        ];
+
+        // Left axis adapts its label and tick format to the active mode
+        const yAxis = showTokens
+            ? {
+                position: 'left',
+                grid: { color: 'rgba(255,255,255,0.06)' },
+                title: { display: true, text: 'Tokens', color: '#8b949e', font: { size: 10 } },
+                ticks: { color: '#8b949e', font: { size: 11 }, callback: v => fmtTokens(v) },
+                beginAtZero: true,
+            }
+            : {
+                position: 'left',
+                grid: { color: 'rgba(255,255,255,0.06)' },
+                title: { display: true, text: 'Daily spend', color: '#3fb950', font: { size: 10 } },
+                ticks: { color: '#3fb950', font: { size: 11 }, callback: v => v === 0 ? '$0' : fmtCost(v) },
+                beginAtZero: true,
+            };
+
+        const ctx = document.getElementById('daily-chart').getContext('2d');
+        window._dailyChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels: dispLabels, datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 14 },
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: item => {
+                                const v   = item.parsed.y;
+                                const lbl = item.dataset.label;
+                                if (lbl === 'Budget remaining')
+                                    return '  Budget remaining: ' + fmtCost(v);
+                                if (lbl === 'Daily spend')
+                                    return '  Daily spend: ' + (v > 0 ? fmtCost(v) : 'none');
+                                return `  ${lbl}: ${fmtTokens(v)}`;
+                            },
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        ticks: {
+                            color: '#8b949e',
+                            font: { size: tickSize },
+                            maxRotation: statsWindow > 60 ? 45 : 0,
+                        }
+                    },
+                    y: yAxis,
+                    y1: {
+                        position: 'right',
+                        grid: { drawOnChartArea: false },
+                        min: 0, max: MONTHLY_BUDGET,
+                        title: { display: true, text: 'Budget remaining', color: '#e3a811', font: { size: 10 } },
+                        ticks: { color: '#e3a811', font: { size: 11 }, callback: v => fmtCost(v) },
+                    },
+                }
+            }
+        });
+    }
+
+    // ---- Tab 3: Cache Efficiency -------------------------------------------
+
+    function renderCacheEfficiency() {
+        destroyChart();
+        const content = document.getElementById('stats-content');
+
+        if (statsData.length === 0) {
+            content.innerHTML = noDataHtml('bi-lightning-charge');
+            return;
+        }
+
+        // ── Build date labels for the visible window ──────────────────────
+        const now = new Date();
+        const labels = [];
+        for (let i = statsWindow - 1; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+            labels.push(d.toLocaleDateString('en-CA'));
+        }
+
+        // ── Aggregate all-time daily maps (needed for accurate window slice) ──
+        const byDate = {};
+        for (const row of statsData) {
+            if (!row.session_start) continue;
+            const key = new Date(row.session_start).toLocaleDateString('en-CA');
+            if (!byDate[key]) byDate[key] = { input: 0, cacheRead: 0, cacheCreate: 0, savings: 0 };
+            const u = row.usage;
+            byDate[key].input       += u.input_tokens                || 0;
+            byDate[key].cacheRead   += u.cache_read_input_tokens     || 0;
+            byDate[key].cacheCreate += u.cache_creation_input_tokens || 0;
+            byDate[key].savings     += calcCacheSavings(u, row.model);
+        }
+
+        const zero = () => ({ input: 0, cacheRead: 0, cacheCreate: 0, savings: 0 });
+        const wd        = labels.map(l => byDate[l] || zero());
+        const cacheReads    = wd.map(d => d.cacheRead);
+        const cacheCreates  = wd.map(d => d.cacheCreate);
+        const savingsPerDay = wd.map(d => d.savings);
+        const hitRates      = wd.map(d => {
+            const tot = d.input + d.cacheRead;
+            return tot > 0 ? +(d.cacheRead / tot * 100).toFixed(1) : null;
+        });
+
+        // ── Summary figures ───────────────────────────────────────────────
+        const totalSavings  = statsData.reduce((s, r) => s + calcCacheSavings(r.usage, r.model), 0);
+        const windowSavings = savingsPerDay.reduce((a, b) => a + b, 0);
+        const allTimeReads  = statsData.reduce((s, r) => s + (r.usage.cache_read_input_tokens || 0), 0);
+        const allTimeInput  = statsData.reduce((s, r) => s + (r.usage.input_tokens || 0), 0);
+        const overallHitRate = allTimeInput + allTimeReads > 0
+            ? ((allTimeReads / (allTimeInput + allTimeReads)) * 100).toFixed(1) : '0';
+
+        // ── Hit rate by prompt position (all-time, not windowed) ──────────
+        // Bucket positions 0-9 individually; 10+ combined.
+        const MAX_POS = 10;
+        const posBuckets = Array.from({ length: MAX_POS + 1 }, () => ({ sum: 0, count: 0 }));
+        for (const row of statsData) {
+            const pos = Math.min(row.prompt_index || 0, MAX_POS);
+            const u   = row.usage;
+            const tot = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0);
+            if (!tot) continue;
+            const hr = (u.cache_read_input_tokens || 0) / tot * 100;
+            posBuckets[pos].sum   += hr;
+            posBuckets[pos].count += 1;
+        }
+        const ordinal = i => ['1st','2nd','3rd','4th','5th','6th','7th','8th','9th','10th'][i] || `${i+1}th`;
+        const posLabels = [...Array(MAX_POS).keys()].map(ordinal).concat(['11th+']);
+        const posData   = posBuckets.map(b => b.count > 0 ? +(b.sum / b.count).toFixed(1) : null);
+        const posCount  = posBuckets.map(b => b.count);
+
+        // ── Display labels ────────────────────────────────────────────────
+        const tickSize   = statsWindow <= 30 ? 11 : statsWindow <= 90 ? 9 : 8;
+        const dispLabels = labels.map(l =>
+            new Date(l + 'T12:00:00').toLocaleDateString([], { month: 'short', day: 'numeric' }));
+
+        const windowBtns = [
+            [7,'1 Week'],[14,'2 Weeks'],[30,'1 Month'],[180,'6 Months'],[365,'1 Year'],
+        ].map(([d, lbl]) =>
+            `<button class="btn btn-sm btn-outline-secondary py-0 px-2${d === statsWindow ? ' active' : ''}"
+                     onclick="setStatsWindow(${d})" style="font-size:0.8rem;">${escHtml(lbl)}</button>`
+        ).join('');
+
+        // ── HTML shell ────────────────────────────────────────────────────
+        content.innerHTML = `
+            <!-- summary badges -->
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-4">
+                <span class="text-secondary" style="font-size:0.82rem;">Window:</span>
+                <div class="btn-group btn-group-sm">${windowBtns}</div>
+                <span class="badge bg-success ms-2">All-time savings: ${fmtCost(totalSavings)}</span>
+                <span class="badge bg-secondary">Period savings: ${fmtCost(windowSavings)}</span>
+                <span class="badge" style="background:#58a6ff; color:#000;">
+                    Overall hit rate: ${overallHitRate}%
+                </span>
+            </div>
+
+            <!-- Chart A -->
+            <div class="card mb-4" style="background:var(--bs-tertiary-bg); border-color:var(--bs-border-color);">
+                <div class="card-header py-2" style="border-color:var(--bs-border-color);">
+                    <strong style="font-size:0.88rem;">
+                        <i class="bi bi-bar-chart-steps me-1 text-warning"></i>
+                        Cache Token Volume &amp; Hit Rate
+                    </strong>
+                </div>
+                <div class="card-body pb-2">
+                    <p class="mb-2" style="font-size:0.79rem; color:var(--bs-secondary-color); line-height:1.5;">
+                        <i class="bi bi-info-circle me-1" style="color:#58a6ff;"></i>
+                        <span style="color:#e3a811; font-weight:600;">Orange bars</span> — tokens <em>written</em> to the cache
+                        (charged at 125% of input rate, a one-time warm-up cost per session).&ensp;
+                        <span style="color:#58a6ff; font-weight:600;">Blue bars</span> — tokens <em>served</em> from cache
+                        (charged at only ~10% of input rate — the saving).&ensp;
+                        <span style="color:#3fb950; font-weight:600;">Green line</span> — cache hit rate:
+                        what fraction of your total input tokens came from cache that day.
+                        Higher is better; values above 50% mean caching is saving you significant money.
+                    </p>
+                    <div style="position:relative; height:260px;">
+                        <canvas id="cache-chart-tokens"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart B -->
+            <div class="card mb-4" style="background:var(--bs-tertiary-bg); border-color:var(--bs-border-color);">
+                <div class="card-header py-2" style="border-color:var(--bs-border-color);">
+                    <strong style="font-size:0.88rem;">
+                        <i class="bi bi-piggy-bank me-1 text-success"></i>
+                        Estimated Daily Cache Savings
+                    </strong>
+                </div>
+                <div class="card-body pb-2">
+                    <p class="mb-2" style="font-size:0.79rem; color:var(--bs-secondary-color); line-height:1.5;">
+                        <i class="bi bi-info-circle me-1" style="color:#58a6ff;"></i>
+                        How much you saved each day because cache-read tokens were billed at ~10% of the standard
+                        input rate instead of 100%.
+                        Formula: <code style="font-size:0.78rem;">cache_read_tokens × (input_price − cache_read_price)</code>.
+                        Note: cache <em>creation</em> costs a small premium (25% extra) but is not subtracted here —
+                        it is typically recouped after just 2–3 subsequent reads of the same content.
+                    </p>
+                    <div style="position:relative; height:220px;">
+                        <canvas id="cache-chart-savings"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart C -->
+            <div class="card mb-4" style="background:var(--bs-tertiary-bg); border-color:var(--bs-border-color);">
+                <div class="card-header py-2" style="border-color:var(--bs-border-color);">
+                    <strong style="font-size:0.88rem;">
+                        <i class="bi bi-graph-up-arrow me-1 text-info"></i>
+                        Cache Hit Rate by Session Depth
+                    </strong>
+                    <span class="badge bg-secondary ms-1" style="font-size:0.65rem;">all-time · all sessions</span>
+                </div>
+                <div class="card-body pb-2">
+                    <p class="mb-2" style="font-size:0.79rem; color:var(--bs-secondary-color); line-height:1.5;">
+                        <i class="bi bi-info-circle me-1" style="color:#58a6ff;"></i>
+                        Average cache hit rate by the prompt's <em>position within its session</em>.
+                        The <strong>1st prompt</strong> only benefits from Claude Code's system prompt being cached
+                        (~10–20 k tokens of instructions sent on every turn).
+                        From the <strong>2nd prompt onwards</strong>, conversation history is also eligible for caching —
+                        so hit rates typically rise sharply and plateau as the session grows.
+                        Colour indicates effectiveness: <span style="color:rgb(255,100,100);">red</span> &lt;20%,
+                        <span style="color:rgb(255,165,0);">orange</span> 20–40%,
+                        <span style="color:rgb(220,200,0);">yellow</span> 40–60%,
+                        <span style="color:#3fb950;">green</span> &gt;60%.
+                        Hover a bar to see how many exchanges contributed.
+                    </p>
+                    <div style="position:relative; height:250px;">
+                        <canvas id="cache-chart-position"></canvas>
+                    </div>
+                </div>
+            </div>`;
+
+        // ── Chart A: token volume + hit rate ──────────────────────────────
+        const ctx1 = document.getElementById('cache-chart-tokens').getContext('2d');
+        cacheCharts.push(new Chart(ctx1, {
+            type: 'bar',
+            data: {
+                labels: dispLabels,
+                datasets: [
+                    {
+                        type: 'bar', label: 'Cache write tokens', data: cacheCreates,
+                        yAxisID: 'y',
+                        backgroundColor: 'rgba(227,168,17,0.55)', borderColor: '#e3a811',
+                        borderWidth: 1, borderRadius: 3, order: 2,
+                    },
+                    {
+                        type: 'bar', label: 'Cache read tokens', data: cacheReads,
+                        yAxisID: 'y',
+                        backgroundColor: 'rgba(88,166,255,0.55)', borderColor: '#58a6ff',
+                        borderWidth: 1, borderRadius: 3, order: 2,
+                    },
+                    {
+                        type: 'line', label: 'Hit rate %', data: hitRates,
+                        yAxisID: 'y1',
+                        borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.07)',
+                        borderWidth: 2,
+                        pointRadius: statsWindow <= 30 ? 3 : 1, pointHoverRadius: 5,
+                        pointBackgroundColor: '#3fb950',
+                        tension: 0.3, spanGaps: true, fill: false, order: 1,
+                    },
+                ],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: true, labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 14 } },
+                    tooltip: {
+                        callbacks: {
+                            label: item => {
+                                const v = item.parsed.y;
+                                if (item.dataset.label === 'Hit rate %')
+                                    return `  Hit rate: ${v !== null ? v + '%' : 'no data'}`;
+                                return `  ${item.dataset.label}: ${fmtTokens(v)}`;
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8b949e', font: { size: tickSize }, maxRotation: statsWindow > 60 ? 45 : 0 } },
+                    y: {
+                        position: 'left', grid: { color: 'rgba(255,255,255,0.06)' },
+                        title: { display: true, text: 'Tokens', color: '#8b949e', font: { size: 10 } },
+                        ticks: { color: '#8b949e', font: { size: 11 }, callback: v => fmtTokens(v) },
+                        beginAtZero: true,
+                    },
+                    y1: {
+                        position: 'right', grid: { drawOnChartArea: false },
+                        min: 0, max: 100,
+                        title: { display: true, text: 'Hit rate %', color: '#3fb950', font: { size: 10 } },
+                        ticks: { color: '#3fb950', font: { size: 11 }, callback: v => v + '%' },
+                    },
+                },
+            },
+        }));
+
+        // ── Chart B: daily savings ────────────────────────────────────────
+        const ctx2 = document.getElementById('cache-chart-savings').getContext('2d');
+        cacheCharts.push(new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: dispLabels,
+                datasets: [{
+                    label: 'Savings',
+                    data: savingsPerDay,
+                    backgroundColor: savingsPerDay.map(s =>
+                        s > 0 ? 'rgba(63,185,80,0.6)' : 'rgba(100,100,100,0.15)'),
+                    borderColor: savingsPerDay.map(s =>
+                        s > 0 ? '#3fb950' : 'rgba(100,100,100,0.3)'),
+                    borderWidth: 1, borderRadius: 4,
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: item => `  Saved: ${item.parsed.y > 0 ? fmtCost(item.parsed.y) : 'none'}`,
+                        },
+                    },
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8b949e', font: { size: tickSize }, maxRotation: statsWindow > 60 ? 45 : 0 } },
+                    y: {
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        title: { display: true, text: 'Savings (USD)', color: '#3fb950', font: { size: 10 } },
+                        ticks: { color: '#3fb950', font: { size: 11 }, callback: v => v === 0 ? '$0' : fmtCost(v) },
+                        beginAtZero: true,
+                    },
+                },
+            },
+        }));
+
+        // ── Chart C: hit rate by session depth ────────────────────────────
+        const barColour = v => {
+            if (v === null) return 'rgba(100,100,100,0.2)';
+            if (v < 20) return 'rgba(255,100,100,0.7)';
+            if (v < 40) return 'rgba(255,165,0,0.7)';
+            if (v < 60) return 'rgba(220,200,0,0.7)';
+            return 'rgba(63,185,80,0.7)';
+        };
+        const barBorder = v => {
+            if (v === null) return 'rgba(100,100,100,0.3)';
+            if (v < 20) return 'rgb(255,100,100)';
+            if (v < 40) return 'rgb(255,165,0)';
+            if (v < 60) return 'rgb(220,200,0)';
+            return '#3fb950';
+        };
+
+        const ctx3 = document.getElementById('cache-chart-position').getContext('2d');
+        cacheCharts.push(new Chart(ctx3, {
+            type: 'bar',
+            data: {
+                labels: posLabels,
+                datasets: [{
+                    label: 'Avg hit rate %',
+                    data: posData,
+                    backgroundColor: posData.map(barColour),
+                    borderColor:     posData.map(barBorder),
+                    borderWidth: 1, borderRadius: 4,
+                }],
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: item => {
+                                const v = item.parsed.y;
+                                const n = posCount[item.dataIndex];
+                                if (v === null) return '  No data for this position';
+                                return [
+                                    `  Avg hit rate: ${v}%`,
+                                    `  From ${n} exchange${n !== 1 ? 's' : ''}`,
+                                ];
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: { grid: { color: 'rgba(255,255,255,0.06)' }, ticks: { color: '#8b949e', font: { size: 11 } } },
+                    y: {
+                        min: 0, max: 100,
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        title: { display: true, text: 'Avg cache hit rate %', color: '#8b949e', font: { size: 10 } },
+                        ticks: { color: '#8b949e', font: { size: 11 }, callback: v => v + '%' },
+                        beginAtZero: true,
+                    },
+                },
+            },
+        }));
+    }
+
+    // ---- Tab 4: Context Usage ----------------------------------------------
+
+    function renderContextUsage() {
+        destroyChart();
+        const content = document.getElementById('stats-content');
+
+        const withCtx = statsData.filter(r => r.context_tokens > 0);
+        if (withCtx.length === 0) {
+            content.innerHTML = noDataHtml('bi-graph-up');
+            return;
+        }
+
+        // Group by project directory (cwd). Each cwd entry merges all session
+        // files for that project — Claude Code splits a long conversation into
+        // multiple JSONL files when the context window is exhausted, but from
+        // the user's perspective it is one continuous session.
+        const cwdMap = new Map(); // cwd → { cwd, rows[], sessionIds Set }
+        for (const row of withCtx) {
+            const key = row.session_cwd || '(unknown)';
+            if (!cwdMap.has(key)) cwdMap.set(key, { cwd: key, rows: [], sessionIds: new Set() });
+            const entry = cwdMap.get(key);
+            entry.rows.push(row);
+            entry.sessionIds.add(row.session_id);
+        }
+
+        // Sort entries newest-first (by latest session_start within the group)
+        const projects = [...cwdMap.values()].map(e => {
+            const latest = e.rows.reduce((m, r) => r.session_start > m ? r.session_start : m, '');
+            return { ...e, latest };
+        }).sort((a, b) => b.latest.localeCompare(a.latest));
+
+        // Default to newest project
+        if (!selectedContextSession || !cwdMap.has(selectedContextSession)) {
+            selectedContextSession = projects[0].cwd;
+        }
+
+        const options = projects.map(p => {
+            const nSess = p.sessionIds.size;
+            const label = `${shortPath(p.cwd)}  ·  ${p.rows.length} prompts` +
+                          (nSess > 1 ? `  (${nSess} session files)` : '');
+            const sel = p.cwd === selectedContextSession ? 'selected' : '';
+            return `<option value="${escHtml(p.cwd)}" ${sel}>${escHtml(label)}</option>`;
+        }).join('');
+
+        content.innerHTML = `
+            <div class="mb-3 p-3 rounded" style="background:var(--bs-tertiary-bg);">
+                <div class="fw-semibold mb-1"><i class="bi bi-graph-up me-1 text-info"></i>Context Window Usage</div>
+                <div class="text-secondary" style="font-size:0.82rem;">
+                    Context window fill at each prompt turn. When Claude Code exhausts the context window it
+                    starts a new session file — those resets appear as <strong style="color:#adb5bd;">⟳</strong> drops on the chart.
+                </div>
+            </div>
+            <div class="mb-3 d-flex align-items-center gap-2">
+                <label class="text-secondary mb-0" style="font-size:0.82rem; white-space:nowrap;">Project</label>
+                <select id="ctx-session-select" class="form-select form-select-sm"
+                        style="max-width:560px; font-size:0.82rem; background:var(--bs-tertiary-bg);"
+                        onchange="window._onCtxSessionChange(this.value)">
+                    ${options}
+                </select>
+            </div>
+            <div style="position:relative; height:340px;">
+                <canvas id="ctx-chart"></canvas>
+            </div>
+            <div class="mt-3 d-flex flex-wrap gap-4" style="font-size:0.79rem; color:var(--bs-secondary-color);">
+                <span><span style="display:inline-block;width:28px;border-top:2px dashed rgba(63,185,80,0.6);vertical-align:middle;margin-right:4px;"></span>50% · 100k</span>
+                <span><span style="display:inline-block;width:28px;border-top:2px dashed rgba(227,168,17,0.7);vertical-align:middle;margin-right:4px;"></span>75% · 150k</span>
+                <span><span style="display:inline-block;width:28px;border-top:2px dashed rgba(220,53,69,0.7);vertical-align:middle;margin-right:4px;"></span>90% · 180k</span>
+                <span>⟳ = context reset (new session file)</span>
+                <span class="ms-auto"><i class="bi bi-info-circle me-1"></i>
+                    Above 75%: earlier context may receive less attention — consider starting a fresh session.</span>
+            </div>`;
+
+        window._onCtxSessionChange = function(cwd) {
+            selectedContextSession = cwd;
+            if (window._ctxChart) { window._ctxChart.destroy(); window._ctxChart = null; }
+            drawContextChart(cwdMap);
+        };
+
+        drawContextChart(cwdMap);
+    }
+
+    function drawContextChart(cwdMap) {
+        const project = cwdMap.get(selectedContextSession);
+        if (!project) return;
+
+        // Sort all rows for this project: by session start time, then prompt_index within session
+        const rows = [...project.rows].sort((a, b) => {
+            const sd = (a.session_start || '').localeCompare(b.session_start || '');
+            return sd !== 0 ? sd : (a.prompt_index || 0) - (b.prompt_index || 0);
+        });
+
+        // Find indices where a new session file starts (context reset points)
+        const resetIndices = new Set();
+        let lastSessId = null;
+        rows.forEach((r, i) => {
+            if (lastSessId !== null && r.session_id !== lastSessId) resetIndices.add(i);
+            lastSessId = r.session_id;
+        });
+
+        const labels      = rows.map((_, i) => `#${i + 1}`);
+        const values      = rows.map(r => r.context_tokens || 0);
+        const pcts        = values.map(v => Math.min(100, v / CONTEXT_WINDOW * 100));
+        const pointColors = pcts.map(p => contextColor(p));
+        const pointRadii  = rows.map((_, i) => resetIndices.has(i) ? 7 : 5);
+        const pointStyles = rows.map((_, i) => resetIndices.has(i) ? 'triangle' : 'circle');
+
+        const ctx  = document.getElementById('ctx-chart').getContext('2d');
+        const grad = ctx.createLinearGradient(0, 0, 0, 340);
+        grad.addColorStop(0,    'rgba(220,53,69,0.22)');
+        grad.addColorStop(0.25, 'rgba(227,168,17,0.12)');
+        grad.addColorStop(0.55, 'rgba(63,185,80,0.08)');
+        grad.addColorStop(1,    'rgba(63,185,80,0.01)');
+
+        const refLine = (val, color) => ({
+            data: labels.map(() => val),
+            borderColor: color, borderDash: [5, 4], borderWidth: 1.5,
+            pointRadius: 0, fill: false, tension: 0, label: null,
+        });
+
+        window._ctxChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'Context tokens',
+                        data: values,
+                        borderColor: 'rgba(130,190,255,0.85)',
+                        backgroundColor: grad,
+                        fill: true,
+                        tension: 0.35,
+                        pointRadius: pointRadii,
+                        pointHoverRadius: 8,
+                        pointStyle: pointStyles,
+                        pointBackgroundColor: pointColors,
+                        pointBorderColor: pointColors,
+                        borderWidth: 2,
+                        order: 1,
+                    },
+                    { ...refLine(100000, 'rgba(63,185,80,0.6)'),  label: '50% (100k)', order: 2 },
+                    { ...refLine(150000, 'rgba(227,168,17,0.7)'), label: '75% (150k)', order: 3 },
+                    { ...refLine(180000, 'rgba(220,53,69,0.7)'),  label: '90% (180k)', order: 4 },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#adb5bd', font: { size: 11 }, boxWidth: 18,
+                        filter: item => item.text !== null } },
+                    tooltip: {
+                        callbacks: {
+                            label: c => {
+                                if (c.datasetIndex !== 0) return c.dataset.label;
+                                const v = c.parsed.y;
+                                const p = (v / CONTEXT_WINDOW * 100).toFixed(1);
+                                return `Context: ${fmtTokens(v)} tokens (${p}%)`;
+                            },
+                            afterBody: items => {
+                                const i   = items[0]?.dataIndex;
+                                const row = rows[i];
+                                const lines = [];
+                                if (resetIndices.has(i)) lines.push('⟳  Context reset — new session file');
+                                if (row?.prompt_text) lines.push(`"${row.prompt_text.substring(0, 80)}${row.prompt_text.length > 80 ? '…' : ''}"`);
+                                return lines;
+                            },
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#6c757d', font: { size: 11 },
+                            callback: (_, i) => resetIndices.has(i) ? `⟳ #${i+1}` : `#${i+1}` },
+                        grid: { color: 'rgba(255,255,255,0.04)' },
+                        title: { display: true, text: 'Prompt', color: '#6c757d', font: { size: 11 } },
+                    },
+                    y: {
+                        min: 0,
+                        max: Math.max(CONTEXT_WINDOW, ...values) * 1.05,
+                        ticks: { color: '#6c757d', font: { size: 11 }, callback: v => fmtTokens(v) },
+                        grid: { color: 'rgba(255,255,255,0.04)' },
+                        title: { display: true, text: 'Context tokens', color: '#6c757d', font: { size: 11 } },
+                    },
+                },
+            },
+        });
+    }
+
+    // ---- Helpers -----------------------------------------------------------
+
+    function noDataHtml(icon) {
+        return `<div class="text-center py-5 text-secondary">
+            <i class="bi ${escHtml(icon)} d-block mb-2" style="font-size:2.5rem;"></i>
+            <p>No usage data found.</p>
+            <small>Token stats will appear once Claude Code starts writing usage fields to session files.</small>
+        </div>`;
+    }
+})();
+
+// ---------------------------------------------------------------------------
+// Auto-refresh + init
+// ---------------------------------------------------------------------------
+setInterval(() => loadSessions(false), 5000);
+
+(async function init() {
+    await loadSessions(true);
+    if (state.sessions.length > 0) {
+        await loadSession(state.sessions[0].id, true);
+    }
+})();
+</script>
+</body>
+</html>

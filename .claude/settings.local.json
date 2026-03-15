@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:/git/aa/claude-code-cli-enhanced\" && pip install -e \".[dev]\" 2>&1)",
+      "Bash(cd \"C:/git/aa/claude-code-cli-enhanced\" && python -m pip install -e \".[dev]\" 2>&1)",
+      "Bash(python -m pip install -e \"C:/git/aa/claude-code-cli-enhanced[dev]\" 2>&1)",
+      "Bash(python --version 2>&1 && python -m pip --version 2>&1)"
+    ]
+  }
+}

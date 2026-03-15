@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "uplink"
+version = "0.2.0"
+description = "Uplink — Claude Code history viewer, browse past sessions in a web UI"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.0.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+uplink = "uplink.__main__:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
