@@ -844,6 +844,12 @@
                         <i class="bi bi-graph-up me-1"></i>Context Usage
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link py-0 px-2" id="tab-project-cost" style="font-size:0.82rem;"
+                       href="#" onclick="switchStatsTab('project-cost'); return false;">
+                        <i class="bi bi-pie-chart me-1"></i>Cost by Project
+                    </a>
+                </li>
             </ul>
         </div>
     </div>
@@ -1922,17 +1928,19 @@ async function deleteImport(sessionId) {
     // ---- Internals ---------------------------------------------------------
 
     function destroyChart() {
-        if (window._dailyChart) { window._dailyChart.destroy(); window._dailyChart = null; }
-        if (window._ctxChart)   { window._ctxChart.destroy();   window._ctxChart = null; }
+        if (window._dailyChart)       { window._dailyChart.destroy();       window._dailyChart = null; }
+        if (window._ctxChart)         { window._ctxChart.destroy();         window._ctxChart = null; }
+        if (window._projectPieChart)  { window._projectPieChart.destroy();  window._projectPieChart = null; }
         cacheCharts.forEach(c => c.destroy());
         cacheCharts = [];
     }
 
     function updateTabHighlight() {
-        document.getElementById('tab-costly').classList.toggle('active',  activeTab === 'costly-prompts');
-        document.getElementById('tab-daily').classList.toggle('active',   activeTab === 'daily-usage');
-        document.getElementById('tab-cache').classList.toggle('active',   activeTab === 'cache-efficiency');
-        document.getElementById('tab-context').classList.toggle('active', activeTab === 'context-usage');
+        document.getElementById('tab-costly').classList.toggle('active',       activeTab === 'costly-prompts');
+        document.getElementById('tab-daily').classList.toggle('active',        activeTab === 'daily-usage');
+        document.getElementById('tab-cache').classList.toggle('active',        activeTab === 'cache-efficiency');
+        document.getElementById('tab-context').classList.toggle('active',      activeTab === 'context-usage');
+        document.getElementById('tab-project-cost').classList.toggle('active', activeTab === 'project-cost');
     }
 
     async function loadStatsData() {
@@ -1956,6 +1964,7 @@ async function deleteImport(sessionId) {
         if      (activeTab === 'costly-prompts')  renderCostlyPrompts();
         else if (activeTab === 'daily-usage')      renderDailyUsage();
         else if (activeTab === 'context-usage')    renderContextUsage();
+        else if (activeTab === 'project-cost')     renderProjectCost();
         else                                       renderCacheEfficiency();
     }
 
@@ -2814,6 +2823,131 @@ async function deleteImport(sessionId) {
                         title: { display: true, text: 'Context tokens', color: '#6c757d', font: { size: 11 } },
                     },
                 },
+            },
+        });
+    }
+
+    // ---- Tab 5: Cost by Project --------------------------------------------
+
+    function renderProjectCost() {
+        destroyChart();
+        const content = document.getElementById('stats-content');
+
+        if (statsData.length === 0) {
+            content.innerHTML = noDataHtml('bi-pie-chart');
+            return;
+        }
+
+        // Aggregate cost per project (cwd)
+        const costMap = new Map(); // cwd → { label, cost, prompts, sessions Set }
+        for (const row of statsData) {
+            const key = row.session_cwd || '(unknown)';
+            if (!costMap.has(key)) costMap.set(key, { label: shortPath(key), cost: 0, prompts: 0, sessions: new Set() });
+            const e = costMap.get(key);
+            e.cost    += row._cost;
+            e.prompts += 1;
+            e.sessions.add(row.session_id);
+        }
+
+        // Sort by cost descending
+        const projects = [...costMap.entries()]
+            .map(([cwd, e]) => ({ cwd, ...e, sessionCount: e.sessions.size }))
+            .sort((a, b) => b.cost - a.cost);
+
+        const totalCost = projects.reduce((s, p) => s + p.cost, 0);
+
+        // Palette — enough colours for up to 20 projects
+        const PALETTE = [
+            '#4e9af1','#f4a63a','#4dc88a','#e05252','#a78bfa',
+            '#f472b6','#38bdf8','#fb923c','#34d399','#f87171',
+            '#60a5fa','#fbbf24','#6ee7b7','#fc8181','#c4b5fd',
+            '#f9a8d4','#7dd3fc','#fdba74','#6fcf97','#ef9a9a',
+        ];
+
+        const labels  = projects.map(p => p.label);
+        const values  = projects.map(p => p.cost);
+        const colors  = projects.map((_, i) => PALETTE[i % PALETTE.length]);
+
+        // Build summary table rows
+        const tableRows = projects.map((p, i) => {
+            const pct  = totalCost > 0 ? (p.cost / totalCost * 100).toFixed(1) : '0.0';
+            const swatch = `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${colors[i]};margin-right:6px;"></span>`;
+            return `<tr>
+                <td>${swatch}${escHtml(p.label)}</td>
+                <td class="text-end">${p.sessionCount}</td>
+                <td class="text-end">${p.prompts.toLocaleString()}</td>
+                <td class="text-end fw-semibold" style="color:${colors[i]}">$${p.cost.toFixed(4)}</td>
+                <td class="text-end text-secondary">${pct}%</td>
+            </tr>`;
+        }).join('');
+
+        content.innerHTML = `
+            <div class="mb-3 p-3 rounded" style="background:var(--bs-tertiary-bg);">
+                <div class="fw-semibold mb-1"><i class="bi bi-pie-chart me-1 text-info"></i>Cost by Project</div>
+                <div class="text-secondary" style="font-size:0.82rem;">
+                    Estimated total spend grouped by project directory, across all sessions.
+                    Total: <strong>$${totalCost.toFixed(4)}</strong>
+                </div>
+            </div>
+            <div class="d-flex gap-4 align-items-start flex-wrap">
+                <div style="position:relative; width:340px; height:340px; flex-shrink:0;">
+                    <canvas id="project-pie-chart"></canvas>
+                </div>
+                <div class="flex-grow-1" style="min-width:280px; overflow-x:auto;">
+                    <table class="table table-sm table-hover" style="font-size:0.82rem;">
+                        <thead>
+                            <tr>
+                                <th>Project</th>
+                                <th class="text-end">Sessions</th>
+                                <th class="text-end">Prompts</th>
+                                <th class="text-end">Cost</th>
+                                <th class="text-end">Share</th>
+                            </tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                        <tfoot>
+                            <tr class="fw-semibold border-top">
+                                <td>Total</td>
+                                <td class="text-end">${[...new Set(statsData.map(r => r.session_id))].length}</td>
+                                <td class="text-end">${statsData.length.toLocaleString()}</td>
+                                <td class="text-end">$${totalCost.toFixed(4)}</td>
+                                <td class="text-end">100%</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>`;
+
+        const ctx = document.getElementById('project-pie-chart').getContext('2d');
+        window._projectPieChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels,
+                datasets: [{
+                    data: values,
+                    backgroundColor: colors,
+                    borderColor: 'rgba(0,0,0,0.3)',
+                    borderWidth: 2,
+                    hoverOffset: 8,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false,
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: c => {
+                                const p = totalCost > 0 ? (c.parsed / totalCost * 100).toFixed(1) : 0;
+                                return ` $${c.parsed.toFixed(4)}  (${p}%)`;
+                            },
+                        },
+                    },
+                },
+                cutout: '55%',
             },
         });
     }
