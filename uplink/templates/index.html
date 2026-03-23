@@ -366,6 +366,93 @@
         }
 
         /* ------------------------------------------------------------------ */
+        /* Thread group header (shared prompt prefix within a folder)          */
+        /* ------------------------------------------------------------------ */
+        .tree-thread-header {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.75rem;
+            cursor: pointer;
+            font-size: 0.74rem;
+            font-weight: 500;
+            color: #90caf9;
+            background: rgba(144, 202, 249, 0.04);
+            border-bottom: 1px solid rgba(144, 202, 249, 0.1);
+            line-height: 1.3;
+        }
+        .tree-thread-header:hover {
+            background: rgba(144, 202, 249, 0.1);
+        }
+        .tree-thread-header .chevron {
+            flex-shrink: 0;
+            transition: transform 0.15s;
+            color: #90caf9;
+            opacity: 0.6;
+        }
+        .tree-thread-header.open .chevron {
+            transform: rotate(90deg);
+        }
+        .tree-thread-header .thread-icon {
+            flex-shrink: 0;
+            color: #90caf9;
+            opacity: 0.6;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Sidechain (/btw aside) item in prompts list                         */
+        /* ------------------------------------------------------------------ */
+        .sidechain-item {
+            padding: 0.3rem 1rem 0.3rem 2.5rem;
+            cursor: pointer;
+            font-size: 0.72rem;
+            color: #90caf9;
+            border-left: 2px solid rgba(144, 202, 249, 0.3);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: rgba(144, 202, 249, 0.03);
+        }
+        .sidechain-item:hover {
+            background: rgba(144, 202, 249, 0.1);
+        }
+        .sidechain-item .sc-label {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Sidechain modal                                                      */
+        /* ------------------------------------------------------------------ */
+        #sidechain-modal .modal-body {
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        .sc-msg {
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+        }
+        .sc-msg-role {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.2rem;
+        }
+        .sc-msg.user .sc-msg-role  { color: #90caf9; }
+        .sc-msg.asst .sc-msg-role  { color: #a5d6a7; }
+        .sc-msg pre {
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.82rem;
+            background: var(--bs-tertiary-bg);
+            border-radius: 0.3rem;
+            padding: 0.6rem;
+            margin: 0;
+        }
+
+        /* ------------------------------------------------------------------ */
         /* Prompt number badge                                                  */
         /* ------------------------------------------------------------------ */
         .prompt-num {
@@ -690,6 +777,13 @@
             0%, 100% { opacity: 1; }
             50% { opacity: 0.25; }
         }
+        @keyframes spin-cw {
+            to { transform: rotate(360deg); }
+        }
+        .spin {
+            display: inline-block;
+            animation: spin-cw 0.7s linear infinite;
+        }
     </style>
 </head>
 <body>
@@ -716,7 +810,7 @@
             <i class="bi bi-bar-chart-line me-1"></i>Stats
         </button>
         <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="loadSessions(true)" title="Refresh">
-            <i class="bi bi-arrow-clockwise"></i>
+            <i class="bi bi-arrow-clockwise" id="refresh-icon"></i>
         </button>
     </div>
 </nav>
@@ -807,6 +901,24 @@
         </div>
     </div>
 
+</div>
+
+<!-- ======================================================================= -->
+<!-- Sidechain (/btw) modal                                                    -->
+<!-- ======================================================================= -->
+<div class="modal fade" id="sidechain-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <span class="modal-title" style="font-size:0.85rem;">
+                    <i class="bi bi-chat-left-quote me-2" style="color:#90caf9;"></i>
+                    <span id="sc-modal-title" style="color:#90caf9;"></span>
+                </span>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="sc-modal-body"></div>
+        </div>
+    </div>
 </div>
 
 <!-- ======================================================================= -->
@@ -1027,6 +1139,7 @@ const state = {
     selectedSession: null,
     filteredPromptUuid: null,   // null = show all
     sessionTab: 'local',        // 'local' | 'imported'
+    sidechainsByPrompt: {},     // parent_prompt_uuid → SidechainInfo[]
 };
 
 // ---------------------------------------------------------------------------
@@ -1072,6 +1185,16 @@ async function fetchJson(url) {
 // Sessions
 // ---------------------------------------------------------------------------
 async function loadSessions(forceRender = false) {
+    const icon    = document.getElementById('refresh-icon');
+    const listEl  = document.getElementById('sessions-list');
+    const spinner = `<div class="sidebar-item text-secondary" style="padding:0.75rem 1rem;">
+                         <span class="spinner-border spinner-border-sm me-2" role="status"></span>Loading sessions…
+                     </div>`;
+
+    if (icon) icon.classList.add('spin');
+    // Show spinner only when the list is currently empty (initial load or after clear).
+    if (listEl && listEl.children.length === 0) listEl.innerHTML = spinner;
+
     try {
         const sessions = await fetchJson('/api/sessions');
 
@@ -1097,6 +1220,8 @@ async function loadSessions(forceRender = false) {
         setStatus(`${sessions.length} session${sessions.length !== 1 ? 's' : ''} found`);
     } catch (e) {
         setStatus(`Error: ${e.message}`);
+    } finally {
+        if (icon) icon.classList.remove('spin');
     }
 }
 
@@ -1124,6 +1249,89 @@ function groupByFolder(sessions) {
     }
     // Sessions within each folder are already newest-first from the API.
     return map;
+}
+
+// ---------------------------------------------------------------------------
+// Per-folder session thread tree — groups sessions that share a common
+// prompt prefix (continuation sessions) into nested collapsible nodes.
+// ---------------------------------------------------------------------------
+
+function _hashStr(str) {
+    let h = 5381;
+    for (let i = 0; i < str.length; i++) {
+        h = Math.imul(h, 33) ^ str.charCodeAt(i);
+    }
+    return (h >>> 0).toString(36);
+}
+
+// Build a trie over sessions keyed by prompt_previews[depth].
+// Returns array of { type:'leaf', session, depth }
+//                or { type:'group', label, depth, sessions, children }
+function buildThreadTree(sessions, depth) {
+    depth = depth || 0;
+    if (sessions.length <= 1 || depth > 30) {
+        return sessions.map(s => ({ type: 'leaf', session: s, depth }));
+    }
+
+    const groups  = new Map();   // key (prompt text) → session[]
+    const noKey   = [];          // sessions with no prompt at this depth
+
+    for (const s of sessions) {
+        const previews = s.prompt_previews || [];
+        const key = depth < previews.length ? (previews[depth] || '').trim() : '';
+        if (!key) {
+            noKey.push(s);
+        } else {
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(s);
+        }
+    }
+
+    const nodes = [];
+    for (const s of noKey) {
+        nodes.push({ type: 'leaf', session: s, depth });
+    }
+    for (const [key, grpSessions] of groups) {
+        if (grpSessions.length === 1) {
+            nodes.push({ type: 'leaf', session: grpSessions[0], depth });
+        } else {
+            nodes.push({
+                type: 'group',
+                label: key,
+                depth,
+                sessions: grpSessions,
+                children: buildThreadTree(grpSessions, depth + 1),
+            });
+        }
+    }
+    return nodes;
+}
+
+// Render trie nodes into HTML.
+// folderKey — stable prefix for generating unique DOM IDs.
+function renderThreadNodes(nodes, openIds, folderKey) {
+    let html = '';
+    for (const node of nodes) {
+        if (node.type === 'leaf') {
+            html += renderSessionItem(node.session, node.depth);
+        } else {
+            const gid = 'thread-' + _hashStr(folderKey + ':' + node.depth + ':' + node.label);
+            const openClass = openIds.has(gid) ? 'open' : '';
+            const indentRem = (0.75 + node.depth * 0.65).toFixed(2);
+            const labelShort = escHtml(node.label.substring(0, 52));
+            html += `
+                <div class="tree-thread-header ${openClass}" onclick="toggleFolder('${gid}', this)" style="padding-left:${indentRem}rem">
+                    <i class="bi bi-chevron-right chevron"></i>
+                    <i class="bi bi-git thread-icon"></i>
+                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(node.label)}">${labelShort}</span>
+                    <span class="badge bg-secondary ms-1" style="font-size:0.6rem;flex-shrink:0;">${node.sessions.length}</span>
+                </div>
+                <div class="tree-children ${openClass}" id="${gid}">
+                    ${renderThreadNodes(node.children, openIds, folderKey)}
+                </div>`;
+        }
+    }
+    return html;
 }
 
 function switchSessionTab(tab) {
@@ -1191,7 +1399,7 @@ function renderSessionsList() {
                         <span class="badge bg-secondary ms-1" style="font-size:0.62rem; flex-shrink:0;">${sessions.length}</span>
                     </div>
                     <div class="tree-children ${openClass}" id="${folderId}">
-                        ${sessions.map(s => renderSessionItem(s)).join('')}
+                        ${renderThreadNodes(buildThreadTree(sessions), openFolderIds, folderId)}
                     </div>`;
             }
             listEl.innerHTML = html;
@@ -1207,13 +1415,15 @@ function renderSessionsList() {
     }
 }
 
-function renderSessionItem(s) {
-    const active  = s.id === state.selectedSessionId ? 'active' : '';
-    const date    = fmtDate(s.start_time);
-    const preview = escHtml((s.preview || '').substring(0, 55));
-    const sid     = escHtml(s.id);
+function renderSessionItem(s, depth) {
+    depth = depth || 0;
+    const active    = s.id === state.selectedSessionId ? 'active' : '';
+    const date      = fmtDate(s.start_time);
+    const preview   = escHtml((s.preview || '').substring(0, 55));
+    const sid       = escHtml(s.id);
+    const plRem     = (2 + depth * 0.75).toFixed(2);
     return `
-        <div class="tree-session ${active}" onclick="loadSession('${sid}', true)">
+        <div class="tree-session ${active}" onclick="loadSession('${sid}', true)" style="padding-left:${plRem}rem">
             <div class="d-flex align-items-center justify-content-between gap-1">
                 <span class="session-time">${date}</span>
                 <div class="d-flex align-items-center gap-1" onclick="event.stopPropagation()">
@@ -1288,16 +1498,41 @@ function toggleFolder(folderId, headerEl) {
 // Session detail
 // ---------------------------------------------------------------------------
 async function loadSession(sessionId, resetFilter = true) {
+    // Immediately mark the row active in the sidebar and show a spinner in
+    // both the prompts list and the conversation pane so the UI doesn't look frozen.
+    state.selectedSessionId = sessionId;
+    renderSessionsList();
+
+    const promptsEl = document.getElementById('prompts-list');
+    const convEl    = document.getElementById('conv-pane');
+    const spinHtml  = `<div class="sidebar-item text-secondary" style="padding:0.75rem 1rem;">
+                           <span class="spinner-border spinner-border-sm me-2" role="status"></span>Loading…
+                       </div>`;
+    if (promptsEl) promptsEl.innerHTML = spinHtml;
+    if (convEl)    convEl.innerHTML    = `<div class="p-4 text-secondary text-center">
+                                              <span class="spinner-border me-2" role="status"></span>Loading session…
+                                          </div>`;
+
     try {
         const session = await fetchJson(`/api/sessions/${sessionId}`);
-        state.selectedSessionId = sessionId;
         state.selectedSession   = session;
+        // Build lookup: parent_prompt_uuid → sidechain (for prompts list rendering)
+        state.sidechainsByPrompt = {};
+        for (const sc of (session.sidechains || [])) {
+            if (sc.parent_prompt_uuid) {
+                if (!state.sidechainsByPrompt[sc.parent_prompt_uuid])
+                    state.sidechainsByPrompt[sc.parent_prompt_uuid] = [];
+                state.sidechainsByPrompt[sc.parent_prompt_uuid].push(sc);
+            }
+        }
         if (resetFilter) state.filteredPromptUuid = null;
 
         renderSessionsList();
         renderPromptsList();
         renderConversation();
     } catch (e) {
+        if (promptsEl) promptsEl.innerHTML = `<div class="sidebar-item text-danger" style="padding:0.75rem 1rem;">Failed to load</div>`;
+        if (convEl)    convEl.innerHTML    = '';
         setStatus(`Error loading session: ${e.message}`);
     }
 }
@@ -1332,6 +1567,7 @@ function renderPromptsList() {
     const assistantsByPrompt = buildAssistantLookup(state.selectedSession.messages);
 
     // Individual prompts scroll normally beneath the sticky block.
+    const scByPrompt = state.sidechainsByPrompt || {};
     listEl.innerHTML = prompts.map((msg, i) => {
         const active       = state.filteredPromptUuid === msg.uuid ? 'active' : '';
         const preview      = escHtml((msg.text || '').substring(0, 60));
@@ -1342,6 +1578,20 @@ function renderPromptsList() {
             <div class="ctx-bar-track" title="Context window: ${pct.toFixed(0)}% of 200k">
                 <div class="ctx-bar-fill" style="width:${pct.toFixed(1)}%; background:${contextColor(pct)};"></div>
             </div>` : '';
+
+        // Sidechain items nested under this prompt
+        const sidechains = scByPrompt[msg.uuid] || [];
+        const scHtml = sidechains.map(sc => {
+            const scId    = escHtml(sc.id);
+            const label   = escHtml((sc.slug || sc.id || 'btw').substring(0, 40));
+            const preview = escHtml(((sc.messages[0] && sc.messages[0].text) || '').substring(0, 45));
+            return `
+                <div class="sidechain-item" onclick="openSidechain('${scId}')">
+                    <i class="bi bi-chat-left-quote flex-shrink-0"></i>
+                    <span class="sc-label"><em>btw:</em> ${preview || label}</span>
+                </div>`;
+        }).join('');
+
         return `
             <div class="sidebar-item ${active}" onclick="filterToPrompt('${msg.uuid}')">
                 <div class="d-flex align-items-start">
@@ -1350,7 +1600,7 @@ function renderPromptsList() {
                 </div>
                 ${compactStats}
                 ${barHtml}
-            </div>`;
+            </div>${scHtml}`;
     }).join('');
 }
 
@@ -1367,6 +1617,31 @@ function buildAssistantLookup(messages) {
         }
     }
     return lookup;
+}
+
+function openSidechain(scId) {
+    // Find the sidechain by id across all prompt buckets
+    const sc = Object.values(state.sidechainsByPrompt || {})
+        .flat()
+        .find(s => s.id === scId);
+    if (!sc) return;
+
+    document.getElementById('sc-modal-title').textContent = sc.slug || sc.id;
+
+    const bodyEl = document.getElementById('sc-modal-body');
+    bodyEl.innerHTML = sc.messages.map(m => {
+        const isUser = m.role === 'user';
+        const cls    = isUser ? 'user' : 'asst';
+        const role   = isUser ? 'You' : 'Claude';
+        const text   = escHtml(m.text || '');
+        return `
+            <div class="sc-msg ${cls}">
+                <div class="sc-msg-role">${role}</div>
+                <pre>${text}</pre>
+            </div>`;
+    }).join('');
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('sidechain-modal')).show();
 }
 
 // ---------------------------------------------------------------------------

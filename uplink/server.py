@@ -36,6 +36,9 @@ def _session_summary(s: _reader.Session) -> dict:
         "message_count": len(s.messages),
         "prompt_count": len(s.user_prompts),
         "preview": s.preview,
+        # First 120 chars of every user prompt — used by the UI to build
+        # per-folder session thread trees (group continuation sessions together).
+        "prompt_previews": [p.text[:120] for p in s.user_prompts],
         "is_imported": s.is_imported,
         "imported_from": s.imported_from,
     }
@@ -58,6 +61,15 @@ def _message_dict(m: _reader.Message) -> dict:
     }
 
 
+def _sidechain_dict(sc: _reader.SidechainInfo) -> dict:
+    return {
+        "id":                 sc.id,
+        "slug":               sc.slug,
+        "parent_prompt_uuid": sc.parent_prompt_uuid,
+        "messages":           [_message_dict(m) for m in sc.messages],
+    }
+
+
 def _session_detail(s: _reader.Session) -> dict:
     return {
         "id": s.id,
@@ -66,6 +78,8 @@ def _session_detail(s: _reader.Session) -> dict:
         "messages": [_message_dict(m) for m in s.messages],
         "is_imported": s.is_imported,
         "imported_from": s.imported_from,
+        "sidechains": [_sidechain_dict(sc)
+                       for sc in _reader.find_sidechains_for_session(s)],
     }
 
 
