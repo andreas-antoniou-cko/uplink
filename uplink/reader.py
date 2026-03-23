@@ -15,6 +15,7 @@ The message.content field can be:
     - A plain string
     - A list of content blocks: text | tool_use | tool_result
 """
+
 import json
 import os
 import time
@@ -24,16 +25,17 @@ from pathlib import Path
 
 
 CLAUDE_PROJECTS_DIR = Path.home() / ".claude" / "projects"
-UPLINK_IMPORTS_DIR  = Path.home() / ".uplink" / "imports"
+UPLINK_IMPORTS_DIR = Path.home() / ".uplink" / "imports"
 
 
 # ---------------------------------------------------------------------------
 # Data model
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ContentBlock:
-    type: str           # "text" | "tool_use" | "tool_result"
+    type: str  # "text" | "tool_use" | "tool_result"
     text: str = ""
     tool_name: str = ""
 
@@ -41,7 +43,7 @@ class ContentBlock:
 @dataclass
 class Message:
     uuid: str
-    role: str           # "user" | "assistant"
+    role: str  # "user" | "assistant"
     content: list[ContentBlock]
     timestamp: datetime
     is_user_prompt: bool = False  # True for real user turns (not tool results)
@@ -61,7 +63,8 @@ class Session:
     cwd: str
     messages: list[Message] = field(default_factory=list)
     is_imported: bool = False
-    imported_from: str = ""   # original cwd recorded at export time
+    imported_from: str = ""  # original cwd recorded at export time
+    name: str | None = None
 
     @property
     def start_time(self) -> datetime | None:
@@ -88,11 +91,12 @@ class SidechainInfo:
     The records carry isSidechain=true, sessionId (= parent session UUID) and
     promptId (= uuid of the user prompt in the parent session that triggered the aside).
     """
-    id: str                    # agent id extracted from records (or filename stem)
-    slug: str                  # human-readable name, e.g. "compiled-chasing-shore"
+
+    id: str  # agent id extracted from records (or filename stem)
+    slug: str  # human-readable name, e.g. "compiled-chasing-shore"
     filepath: Path
-    parent_session_id: str     # sessionId field from records
-    parent_prompt_uuid: str    # promptId field — links to the triggering user prompt
+    parent_session_id: str  # sessionId field from records
+    parent_prompt_uuid: str  # promptId field — links to the triggering user prompt
     messages: list[Message]
     cwd: str
 
@@ -113,6 +117,7 @@ class SidechainInfo:
 # ---------------------------------------------------------------------------
 # Content parser
 # ---------------------------------------------------------------------------
+
 
 def _parse_content(raw) -> tuple[list[ContentBlock], bool]:
     """
@@ -142,11 +147,13 @@ def _parse_content(raw) -> tuple[list[ContentBlock], bool]:
                 text = json.dumps(input_data, indent=2)
             except Exception:
                 text = str(input_data)
-            blocks.append(ContentBlock(
-                type="tool_use",
-                tool_name=item.get("name", "unknown"),
-                text=text,
-            ))
+            blocks.append(
+                ContentBlock(
+                    type="tool_use",
+                    tool_name=item.get("name", "unknown"),
+                    text=text,
+                )
+            )
 
         elif btype == "tool_result":
             result_content = item.get("content", "")
@@ -171,6 +178,7 @@ def _parse_content(raw) -> tuple[list[ContentBlock], bool]:
 # File parser
 # ---------------------------------------------------------------------------
 
+
 def _parse_timestamp(ts_str: str) -> datetime:
     if not ts_str:
         return datetime.now(timezone.utc)
@@ -184,6 +192,7 @@ def parse_session_file(filepath: Path) -> Session | None:
     """Parse a single JSONL session file into a Session object."""
     messages: list[Message] = []
     cwd = ""
+    session_name = None
 
     try:
         with open(filepath, encoding="utf-8", errors="replace") as f:
@@ -196,11 +205,14 @@ def parse_session_file(filepath: Path) -> Session | None:
                 except json.JSONDecodeError:
                     continue
 
+                rec_type = record.get("type", "")
+                if rec_type == "custom-title":
+                    session_name = record.get("customTitle", None)
+
                 # Grab cwd from the first record that has it.
                 if not cwd:
                     cwd = record.get("cwd", "")
 
-                rec_type = record.get("type", "")
                 if rec_type not in ("user", "assistant"):
                     continue
 
@@ -215,22 +227,24 @@ def parse_session_file(filepath: Path) -> Session | None:
                 # Only mark user-role records as prompts.
                 is_user_prompt = (role == "user") and is_prompt
 
-                messages.append(Message(
-                    uuid=record.get("uuid", ""),
-                    role=role,
-                    content=blocks,
-                    timestamp=_parse_timestamp(record.get("timestamp", "")),
-                    is_user_prompt=is_user_prompt,
-                    model=msg_data.get("model", ""),
-                    usage=msg_data.get("usage") or record.get("usage") or {},
-                ))
+                messages.append(
+                    Message(
+                        uuid=record.get("uuid", ""),
+                        role=role,
+                        content=blocks,
+                        timestamp=_parse_timestamp(record.get("timestamp", "")),
+                        is_user_prompt=is_user_prompt,
+                        model=msg_data.get("model", ""),
+                        usage=msg_data.get("usage") or record.get("usage") or {},
+                    )
+                )
     except Exception:
         return None
 
     if not messages:
         return None
 
-    return Session(id=filepath.stem, filepath=filepath, cwd=cwd, messages=messages)
+    return Session(id=filepath.stem, filepath=filepath, cwd=cwd, messages=messages, name=session_name)
 
 
 def _get_file_cwd(filepath: Path) -> str:
@@ -261,6 +275,7 @@ def _get_file_cwd(filepath: Path) -> str:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def find_sessions(project_dir: str) -> list[Session]:
     """
@@ -336,16 +351,20 @@ def search_sessions(query: str, max_results: int = 100) -> list[dict]:
             if msg.uuid:
                 seen_msg_uuids.add(msg.uuid)
 
-            results.append({
-                "session_id": session.id,
-                "session_cwd": session.cwd,
-                "session_start": session.start_time.isoformat() if session.start_time else None,
-                "message_uuid": msg.uuid,
-                "prompt_uuid": current_prompt_uuid,
-                "role": msg.role,
-                "is_user_prompt": msg.is_user_prompt,
-                "snippet": _snippet(msg.text, query_lower),
-            })
+            results.append(
+                {
+                    "session_id": session.id,
+                    "session_cwd": session.cwd,
+                    "session_start": session.start_time.isoformat()
+                    if session.start_time
+                    else None,
+                    "message_uuid": msg.uuid,
+                    "prompt_uuid": current_prompt_uuid,
+                    "role": msg.role,
+                    "is_user_prompt": msg.is_user_prompt,
+                    "snippet": _snippet(msg.text, query_lower),
+                }
+            )
 
     # Newest sessions first, user prompts before assistant messages within a session.
     results.sort(key=lambda r: (r.get("session_start") or ""), reverse=True)
@@ -358,8 +377,8 @@ def _snippet(text: str, query: str, context: int = 120) -> str:
     if idx == -1:
         return text[:context]
     start = max(0, idx - context // 2)
-    end   = min(len(text), idx + len(query) + context // 2)
-    out   = text[start:end].replace("\n", " ")
+    end = min(len(text), idx + len(query) + context // 2)
+    out = text[start:end].replace("\n", " ")
     if start > 0:
         out = "…" + out
     if end < len(text):
@@ -385,20 +404,24 @@ def parse_imported_json(filepath: Path) -> "Session | None":
             if isinstance(raw, list):
                 for b in raw:
                     if isinstance(b, dict):
-                        blocks.append(ContentBlock(
-                            type=b.get("type", "text"),
-                            text=b.get("text", ""),
-                            tool_name=b.get("tool_name", ""),
-                        ))
-            messages.append(Message(
-                uuid=m.get("uuid", ""),
-                role=m.get("role", "user"),
-                content=blocks,
-                timestamp=_parse_timestamp(m.get("timestamp", "")),
-                is_user_prompt=m.get("is_user_prompt", False),
-                model=m.get("model", ""),
-                usage=m.get("usage") or {},
-            ))
+                        blocks.append(
+                            ContentBlock(
+                                type=b.get("type", "text"),
+                                text=b.get("text", ""),
+                                tool_name=b.get("tool_name", ""),
+                            )
+                        )
+            messages.append(
+                Message(
+                    uuid=m.get("uuid", ""),
+                    role=m.get("role", "user"),
+                    content=blocks,
+                    timestamp=_parse_timestamp(m.get("timestamp", "")),
+                    is_user_prompt=m.get("is_user_prompt", False),
+                    model=m.get("model", ""),
+                    usage=m.get("usage") or {},
+                )
+            )
 
         if not messages:
             return None
@@ -411,6 +434,7 @@ def parse_imported_json(filepath: Path) -> "Session | None":
             messages=messages,
             is_imported=True,
             imported_from=original_cwd,
+            name=sd.get("name"),
         )
     except Exception:
         return None
@@ -466,7 +490,7 @@ def find_all_sessions() -> list[Session]:
     global _session_cache, _session_cache_ts
     now = time.monotonic()
     if now - _session_cache_ts > _SESSION_CACHE_TTL:
-        _session_cache    = _build_sessions()
+        _session_cache = _build_sessions()
         _session_cache_ts = now
     return _session_cache
 
@@ -522,15 +546,17 @@ def parse_sidechain_file(filepath: Path) -> "SidechainInfo | None":
                 raw_content = msg_data.get("content", "")
                 blocks, is_prompt = _parse_content(raw_content)
 
-                messages.append(Message(
-                    uuid=record.get("uuid", ""),
-                    role=role,
-                    content=blocks,
-                    timestamp=_parse_timestamp(record.get("timestamp", "")),
-                    is_user_prompt=(role == "user") and is_prompt,
-                    model=msg_data.get("model", ""),
-                    usage=msg_data.get("usage") or record.get("usage") or {},
-                ))
+                messages.append(
+                    Message(
+                        uuid=record.get("uuid", ""),
+                        role=role,
+                        content=blocks,
+                        timestamp=_parse_timestamp(record.get("timestamp", "")),
+                        is_user_prompt=(role == "user") and is_prompt,
+                        model=msg_data.get("model", ""),
+                        usage=msg_data.get("usage") or record.get("usage") or {},
+                    )
+                )
     except Exception:
         return None
 
@@ -583,8 +609,7 @@ def _collapse_continuation_sessions(sessions: list[Session]) -> list[Session]:
         return sessions
 
     prompt_sets: list[set[str]] = [
-        {m.uuid for m in s.messages if m.is_user_prompt and m.uuid}
-        for s in sessions
+        {m.uuid for m in s.messages if m.is_user_prompt and m.uuid} for s in sessions
     ]
 
     discard: list[bool] = [False] * len(sessions)
@@ -594,7 +619,9 @@ def _collapse_continuation_sessions(sessions: list[Session]) -> list[Session]:
         for j in range(len(sessions)):
             if i == j or discard[j]:
                 continue
-            if prompt_sets[i] < prompt_sets[j]:   # strict subset → i is a continuation stub
+            if (
+                prompt_sets[i] < prompt_sets[j]
+            ):  # strict subset → i is a continuation stub
                 discard[i] = True
                 break
 

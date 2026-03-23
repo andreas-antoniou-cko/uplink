@@ -31,6 +31,7 @@ app.config["JSON_SORT_KEYS"] = False
 def _session_summary(s: _reader.Session) -> dict:
     return {
         "id": s.id,
+        "name": s.name,
         "cwd": s.cwd,
         "start_time": s.start_time.isoformat() if s.start_time else None,
         "message_count": len(s.messages),
@@ -73,6 +74,7 @@ def _sidechain_dict(sc: _reader.SidechainInfo) -> dict:
 def _session_detail(s: _reader.Session) -> dict:
     return {
         "id": s.id,
+        "name": s.name,
         "cwd": s.cwd,
         "start_time": s.start_time.isoformat() if s.start_time else None,
         "messages": [_message_dict(m) for m in s.messages],

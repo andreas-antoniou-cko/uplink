@@ -1,16 +1,11 @@
 """Tests for the session file reader."""
+
 import json
-import pytest
-from datetime import timezone
 from pathlib import Path
-import tempfile
-import os
 
 from uplink.reader import (
     parse_session_file,
     _parse_content,
-    ContentBlock,
-    Session,
 )
 
 
