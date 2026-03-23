@@ -28,9 +28,9 @@ No data ever leaves your machine. Uplink is a local-only Flask server.
 
 ```bash
 # Clone and install (editable)
-git clone https://github.com/yourname/claude-code-cli-enhanced
-cd claude-code-cli-enhanced
-pip install -e .
+git clone https://github.com/andreas-antoniou-cko/uplink
+cd uplink
+pip install -e . # or uv sync
 ```
 
 **Requirements:** Python 3.11+ · Claude Code installed and authenticated
@@ -177,9 +177,8 @@ Both the horizontal split between the sidebar and conversation pane, and the ver
 ## Project Structure
 
 ```
-claude-code-cli-enhanced/
+uplink/
 ├── README.md
-├── SPEC.md                     # original design specification
 ├── pyproject.toml
 ├── uplink/
 │   ├── __main__.py             # CLI entry point (click)
@@ -190,9 +189,7 @@ claude-code-cli-enhanced/
 │   └── templates/
 │       └── index.html          # single-page UI (Bootstrap 5 dark)
 └── tests/
-    ├── test_parser.py
-    ├── test_reader.py
-    └── test_store.py
+    └── test_reader.py
 ```
 
 ---
