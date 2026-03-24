@@ -1419,13 +1419,14 @@ function renderSessionItem(s, depth) {
     depth = depth || 0;
     const active    = s.id === state.selectedSessionId ? 'active' : '';
     const date      = fmtDate(s.start_time);
+    const label     = s.name ? escHtml(s.name) : date;
     const preview   = escHtml((s.preview || '').substring(0, 55));
     const sid       = escHtml(s.id);
     const plRem     = (2 + depth * 0.75).toFixed(2);
     return `
         <div class="tree-session ${active}" onclick="loadSession('${sid}', true)" style="padding-left:${plRem}rem">
             <div class="d-flex align-items-center justify-content-between gap-1">
-                <span class="session-time">${date}</span>
+                <span class="session-time">${label}</span>
                 <div class="d-flex align-items-center gap-1" onclick="event.stopPropagation()">
                     <div class="dropdown">
                         <button class="session-export-btn dropdown-toggle" data-bs-toggle="dropdown"
@@ -1453,13 +1454,14 @@ function renderSessionItem(s, depth) {
 function renderImportedItem(s) {
     const active  = s.id === state.selectedSessionId ? 'active' : '';
     const date    = fmtDate(s.start_time);
+    const label   = s.name ? escHtml(s.name) : date;
     const preview = escHtml((s.preview || '').substring(0, 45));
     const from    = escHtml(shortPath(s.imported_from || s.cwd || ''));
     const sid     = escHtml(s.id);
     return `
         <div class="tree-session imported ${active}" onclick="loadSession('${sid}', true)">
             <div class="d-flex align-items-center justify-content-between gap-1">
-                <span class="session-time">${date}</span>
+                <span class="session-time">${label}</span>
                 <div class="d-flex align-items-center gap-1" onclick="event.stopPropagation()">
                     <div class="dropdown">
                         <button class="session-export-btn dropdown-toggle" data-bs-toggle="dropdown"
@@ -2038,6 +2040,7 @@ function sessionToMarkdown(session) {
 
     let md = `# Claude Code Session\n\n`;
     md += `| | |\n|---|---|\n`;
+    if (session.name) md += `| **Name** | ${session.name} |\n`;
     md += `| **Project** | \`${session.cwd}\` |\n`;
     md += `| **Date** | ${date} |\n`;
     md += `| **Session ID** | \`${session.id}\` |\n`;
